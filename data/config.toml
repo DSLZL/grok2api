@@ -29,7 +29,7 @@ auto_refresh = true
 refresh_interval_hours = 8
 super_refresh_interval_hours = 2
 fail_threshold = 5
-save_delay_ms = 500
+save_delay_ms = 200
 reload_interval_sec = 30
 
 [cache]
