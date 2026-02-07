@@ -39,6 +39,22 @@ docker compose up -d
 > 
 > For persistence, use MySQL / Redis / PostgreSQL, on Render set: SERVER_STORAGE_TYPE (mysql/redis/pgsql) and SERVER_STORAGE_URL.
 
+#### Vercel Deployment
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/chenyme/grok2api&env=LOG_LEVEL,LOG_FILE_ENABLED,DATA_DIR,SERVER_STORAGE_TYPE,SERVER_STORAGE_URL&envDefaults=%7B%22DATA_DIR%22%3A%22/tmp/data%22%2C%22LOG_FILE_ENABLED%22%3A%22false%22%2C%22LOG_LEVEL%22%3A%22INFO%22%2C%22SERVER_STORAGE_TYPE%22%3A%22local%22%2C%22SERVER_STORAGE_URL%22%3A%22%22%7D)
+
+> Make sure to set DATA_DIR=/tmp/data and disable file logging (LOG_FILE_ENABLED=false).
+>
+> For persistence, use MySQL / Redis / PostgreSQL. On Vercel set: SERVER_STORAGE_TYPE (mysql/redis/pgsql) and SERVER_STORAGE_URL.
+
+#### Render Deployment
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/chenyme/grok2api)
+
+> Render free instances spin down after 15 minutes of inactivity; data is lost on resume/restart/redeploy.
+>
+> For persistence, use MySQL / Redis / PostgreSQL. On Render set: SERVER_STORAGE_TYPE (mysql/redis/pgsql) and SERVER_STORAGE_URL.
+
 ### Admin panel
 
 URL: `http://<host>:8000/admin`  
