@@ -50,6 +50,7 @@ Default password: `grok2api` (config key `app.app_key`, change it in production)
 | :--- | :--- | :--- | :--- |
 | `LOG_LEVEL` | Log level | `INFO` | `DEBUG` |
 | `LOG_FILE_ENABLED` | Enable file logging | `true` | `false` |
+| `DATA_DIR` | Data directory (config/tokens/locks) | `./data` | `/data` |
 | `SERVER_HOST` | Bind address | `0.0.0.0` | `0.0.0.0` |
 | `SERVER_PORT` | Service port | `8000` | `8000` |
 | `SERVER_WORKERS` | Uvicorn worker count | `1` | `2` |
