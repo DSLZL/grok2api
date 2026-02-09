@@ -9,7 +9,6 @@ import os
 import re
 import time
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -26,15 +25,15 @@ from app.core.config import get_config
 from app.core.exceptions import AppException, UpstreamException, ValidationException
 from app.core.logger import logger
 from app.core.storage import DATA_DIR
-from app.services.grok.utils.headers import apply_statsig, build_sso_cookie
-from app.services.token.service import TokenService
+from app.services.reverse import (
+    AssetsDeleteReverse,
+    AssetsDownloadReverse,
+    AssetsListReverse,
+    AssetsUploadReverse,
+)
 
 # ==================== 常量 ====================
 
-UPLOAD_API = "https://grok.com/rest/app-chat/upload-file"
-LIST_API = "https://grok.com/rest/assets"
-DELETE_API = "https://grok.com/rest/assets-metadata"
-DOWNLOAD_API = "https://assets.grok.com"
 LOCK_DIR = DATA_DIR / ".locks"
 
 # 全局信号量（运行时动态初始化）
@@ -115,66 +114,14 @@ async def _file_lock(name: str, timeout: int = 10):
             fd.close()
 
 
-@dataclass
-class ServiceConfig:
-    """服务配置"""
-
-    proxy: str
-    timeout: int
-    browser: str
-    user_agent: str
-
-    @classmethod
-    def from_settings(cls, proxy: Optional[str] = None):
-        return cls(
-            proxy=proxy
-            or get_config("network.asset_proxy_url")
-            or get_config("network.base_proxy_url"),
-            timeout=get_config("network.timeout"),
-            browser=get_config("security.browser"),
-            user_agent=get_config("security.user_agent"),
-        )
-
-    def get_proxies(self) -> Optional[dict]:
-        return {"http": self.proxy, "https": self.proxy} if self.proxy else None
-
-
 # ==================== 基础服务 ====================
 
 
 class BaseService:
     """基础服务类"""
 
-    def __init__(self, proxy: Optional[str] = None):
-        self.config = ServiceConfig.from_settings(proxy)
+    def __init__(self):
         self._session: Optional[AsyncSession] = None
-
-    def _build_headers(
-        self, token: str, referer: str = "https://grok.com/", download: bool = False
-    ) -> dict:
-        """构建请求头"""
-        if download:
-            headers = {
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "same-site",
-                "Sec-Fetch-User": "?1",
-                "Referer": referer,
-                "User-Agent": self.config.user_agent,
-            }
-        else:
-            headers = {
-                "Accept": "*/*",
-                "Content-Type": "application/json",
-                "Origin": "https://grok.com",
-                "Referer": referer,
-                "User-Agent": self.config.user_agent,
-            }
-            apply_statsig(headers)
-
-        headers["Cookie"] = build_sso_cookie(token)
-        return headers
 
     async def _get_session(self) -> AsyncSession:
         """获取复用 Session"""
@@ -298,44 +245,19 @@ class UploadService(BaseService):
 
             # 执行上传
             session = await self._get_session()
-            response = await session.post(
-                UPLOAD_API,
-                headers=self._build_headers(token),
-                json={"fileName": filename, "fileMimeType": mime, "content": b64},
-                impersonate=self.config.browser,
-                timeout=self.config.timeout,
-                proxies=self.config.get_proxies(),
+            response = await AssetsUploadReverse.request(
+                session,
+                token,
+                filename,
+                mime,
+                b64,
             )
 
-            # 处理响应
-            if response.status_code == 200:
-                result = response.json()
-                file_id = result.get("fileMetadataId", "")
-                file_uri = result.get("fileUri", "")
-                logger.info(f"Upload success: {filename} -> {file_id}")
-                return file_id, file_uri
-
-            # 认证失败
-            if response.status_code in (401, 403):
-                logger.warning(f"Upload auth failed: {response.status_code}")
-                try:
-                    await TokenService.record_fail(
-                        token, response.status_code, "upload_auth_failed"
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to record token failure: {e}")
-
-                raise UpstreamException(
-                    message=f"Upload authentication failed: {response.status_code}",
-                    details={"status": response.status_code, "token_invalidated": True},
-                )
-
-            # 其他错误
-            logger.error(f"Upload failed: {filename} - {response.status_code}")
-            raise UpstreamException(
-                message=f"Upload failed: {response.status_code}",
-                details={"status": response.status_code},
-            )
+            result = response.json()
+            file_id = result.get("fileMetadataId", "")
+            file_uri = result.get("fileUri", "")
+            logger.info(f"Upload success: {filename} -> {file_id}")
+            return file_id, file_uri
 
 
 # ==================== 列表服务 ====================
@@ -346,7 +268,6 @@ class ListService(BaseService):
 
     async def iter_assets(self, token: str):
         """分页迭代资产列表"""
-        headers = self._build_headers(token, referer="https://grok.com/files")
         params = {
             "pageSize": 50,
             "orderBy": "ORDER_BY_LAST_USE_TIME",
@@ -367,20 +288,11 @@ class ListService(BaseService):
                 else:
                     params.pop("pageToken", None)
 
-                response = await session.get(
-                    LIST_API,
-                    headers=headers,
-                    params=params,
-                    impersonate=self.config.browser,
-                    timeout=self.config.timeout,
-                    proxies=self.config.get_proxies(),
+                response = await AssetsListReverse.request(
+                    session,
+                    token,
+                    params,
                 )
-
-                if response.status_code != 200:
-                    raise UpstreamException(
-                        message=f"List failed: {response.status_code}",
-                        details={"status": response.status_code},
-                    )
 
                 result = response.json()
                 page_assets = result.get("assets", [])
@@ -417,28 +329,19 @@ class DeleteService(BaseService):
         """删除单个文件"""
         async with _get_assets_semaphore():
             session = await self._get_session()
-            response = await session.delete(
-                f"{DELETE_API}/{asset_id}",
-                headers=self._build_headers(token, referer="https://grok.com/files"),
-                impersonate=self.config.browser,
-                timeout=self.config.timeout,
-                proxies=self.config.get_proxies(),
+            response = await AssetsDeleteReverse.request(
+                session,
+                token,
+                asset_id,
             )
 
-            if response.status_code == 200:
-                logger.debug(f"Deleted: {asset_id}")
-                return True
-
-            logger.error(f"Delete failed: {asset_id} - {response.status_code}")
-            raise UpstreamException(
-                message=f"Delete failed: {asset_id}",
-                details={"status": response.status_code},
-            )
+            logger.debug(f"Deleted: {asset_id}")
+            return True
 
     async def delete_all(self, token: str) -> Dict[str, int]:
         """删除所有文件"""
         total = success = failed = 0
-        list_service = ListService(self.config.proxy)
+        list_service = ListService()
 
         try:
             async for assets in list_service.iter_assets(token):
@@ -496,8 +399,8 @@ class DeleteService(BaseService):
 class DownloadService(BaseService):
     """文件下载服务"""
 
-    def __init__(self, proxy: Optional[str] = None):
-        super().__init__(proxy)
+    def __init__(self):
+        super().__init__()
         self.base_dir = DATA_DIR / "tmp"
         self.image_dir = self.base_dir / "image"
         self.video_dir = self.base_dir / "video"
@@ -552,25 +455,8 @@ class DownloadService(BaseService):
         if not file_path.startswith("/"):
             file_path = f"/{file_path}"
 
-        url = f"{DOWNLOAD_API}{file_path}"
-        headers = self._build_headers(token, download=True)
-
         session = await self._get_session()
-        response = await session.get(
-            url,
-            headers=headers,
-            proxies=self.config.get_proxies(),
-            timeout=self.config.timeout,
-            allow_redirects=True,
-            impersonate=self.config.browser,
-            stream=True,
-        )
-
-        if response.status_code != 200:
-            raise UpstreamException(
-                message=f"Download failed: {response.status_code}",
-                details={"path": file_path, "status": response.status_code},
-            )
+        response = await AssetsDownloadReverse.request(session, token, file_path)
 
         # 保存文件
         tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
