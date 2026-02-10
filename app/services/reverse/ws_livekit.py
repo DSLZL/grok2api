@@ -99,7 +99,8 @@ class LivekitTokenReverse:
 
                 return response
 
-            return await retry_on_status(_do_request)
+            response = await retry_on_status(_do_request)
+            return response.json()
 
 
         except Exception as e:

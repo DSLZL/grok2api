@@ -96,7 +96,7 @@ def build_headers(
     safe_headers = dict(headers)
     if "Cookie" in safe_headers:
         safe_headers["Cookie"] = "<redacted>"
-    logger.debug(f"Built headers: {orjson.dumps(safe_headers, indent=2)}")
+    logger.debug(f"Built headers: {orjson.dumps(safe_headers).decode()}")
 
     return headers
 
