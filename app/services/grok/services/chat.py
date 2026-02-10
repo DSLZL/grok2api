@@ -394,12 +394,21 @@ class ChatService:
                 break
 
         if not token:
-            raise AppException(
-                message="No available tokens. Please try again later.",
-                error_type=ErrorType.RATE_LIMIT.value,
-                code="rate_limit_exceeded",
-                status_code=429,
-            )
+            logger.info("No available tokens, attempting to refresh cooling tokens...")
+            result = await token_mgr.refresh_cooling_tokens()
+            if result.get("recovered", 0) > 0:
+                for pool_name in ModelService.pool_candidates_for_model(model):
+                    token = token_mgr.get_token(pool_name)
+                    if token:
+                        break
+
+            if not token:
+                raise AppException(
+                    message="No available tokens. Please try again later.",
+                    error_type=ErrorType.RATE_LIMIT.value,
+                    code="rate_limit_exceeded",
+                    status_code=429,
+                )
 
         # 解析参数
         think = {"enabled": True, "disabled": False}.get(thinking)

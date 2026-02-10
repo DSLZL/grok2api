@@ -646,7 +646,7 @@ class TokenManager:
                 # 重试逻辑：最多 2 次重试
                 for retry in range(3):  # 0, 1, 2
                     try:
-                        result = await usage_service.get(token_str)
+                        result = await usage_service.get(token_str, model_name="grok-3")
 
                         if result and "remainingTokens" in result:
                             new_quota = result["remainingTokens"]
@@ -666,7 +666,6 @@ class TokenManager:
                                 "expired": False,
                             }
 
-                        token_info.mark_synced()
                         return {"recovered": False, "expired": False}
 
                     except Exception as e:
@@ -688,16 +687,13 @@ class TokenManager:
                                     f"marking as expired"
                                 )
                                 token_info.status = TokenStatus.EXPIRED
-                                token_info.mark_synced()
                                 return {"recovered": False, "expired": True}
                         else:
                             logger.warning(
                                 f"Token {token_info.token[:10]}...: refresh failed ({e})"
                             )
-                            token_info.mark_synced()
                             return {"recovered": False, "expired": False}
 
-                token_info.mark_synced()
                 return {"recovered": False, "expired": False}
 
         # 批量处理
