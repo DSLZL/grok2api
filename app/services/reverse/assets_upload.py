@@ -6,9 +6,9 @@ from typing import Any
 from curl_cffi.requests import AsyncSession
 
 from app.core.logger import logger
+from app.core.config import get_config
 from app.core.exceptions import UpstreamException
 from app.services.token.service import TokenService
-from app.core.config import get_config
 from app.services.reverse.utils.headers import build_headers
 from app.services.reverse.utils.retry import retry_on_status
 

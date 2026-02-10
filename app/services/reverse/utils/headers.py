@@ -5,8 +5,8 @@ import orjson
 from urllib.parse import urlparse
 from typing import Dict, Optional
 
-from app.core.config import get_config
 from app.core.logger import logger
+from app.core.config import get_config
 from app.services.reverse.utils.statsig import StatsigGenerator
 
 
@@ -14,7 +14,7 @@ def _build_sso_cookie(sso_token: str) -> str:
     """
     Build SSO Cookie string.
     """
-    # Remove "sso=" prefix if present
+    # Format
     sso_token = sso_token[4:] if sso_token.startswith("sso=") else sso_token
 
     # SSO Cookie

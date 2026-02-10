@@ -6,11 +6,8 @@ import base64
 import random
 import string
 
-from app.core.config import get_config
 from app.core.logger import logger
-
-
-STATIC_STATSIG_ID = "ZTpUeXBlRXJyb3I6IENhbm5vdCByZWFkIHByb3BlcnRpZXMgb2YgdW5kZWZpbmVkIChyZWFkaW5nICdjaGlsZE5vZGVzJyk="
+from app.core.config import get_config
 
 
 class StatsigGenerator:
@@ -53,7 +50,7 @@ class StatsigGenerator:
 
         # Static Statsig ID
         logger.debug("Generating static Statsig ID")
-        return STATIC_STATSIG_ID
+        return "ZTpUeXBlRXJyb3I6IENhbm5vdCByZWFkIHByb3BlcnRpZXMgb2YgdW5kZWZpbmVkIChyZWFkaW5nICdjaGlsZE5vZGVzJyk="
 
 
 __all__ = ["StatsigGenerator"]

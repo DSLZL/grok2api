@@ -10,14 +10,13 @@ import ssl
 import time
 import uuid
 from typing import AsyncGenerator, Dict, Optional
-from urllib.parse import urlparse
 
 import aiohttp
-from aiohttp_socks import ProxyConnector
 
 from app.core.config import get_config
 from app.core.logger import logger
 from app.services.grok.utils.headers import build_sso_cookie
+from app.services.reverse.utils.websocket import resolve_proxy
 
 WS_URL = "wss://grok.com/ws/imagine/listen"
 
@@ -36,16 +35,7 @@ class ImageService:
 
     def _resolve_proxy(self) -> tuple[aiohttp.BaseConnector, Optional[str]]:
         proxy_url = get_config("network.base_proxy_url")
-        if not proxy_url:
-            return aiohttp.TCPConnector(ssl=self._ssl_context), None
-
-        scheme = urlparse(proxy_url).scheme.lower()
-        if scheme.startswith("socks"):
-            logger.info(f"Using SOCKS proxy: {proxy_url}")
-            return ProxyConnector.from_url(proxy_url, ssl=self._ssl_context), None
-
-        logger.info(f"Using HTTP proxy: {proxy_url}")
-        return aiohttp.TCPConnector(ssl=self._ssl_context), proxy_url
+        return resolve_proxy(proxy_url, self._ssl_context)
 
     def _get_ws_headers(self, token: str) -> Dict[str, str]:
         cookie = build_sso_cookie(token, include_rw=True)
