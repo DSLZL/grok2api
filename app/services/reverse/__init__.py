@@ -10,6 +10,7 @@ from .nsfw_mgmt import NsfwMgmtReverse
 from .rate_limits import RateLimitsReverse
 from .set_birth import SetBirthReverse
 from .ws_livekit import LivekitTokenReverse, LivekitWebSocketReverse
+from .ws_imagine import ImagineWebSocketReverse
 from .utils.headers import build_headers
 from .utils.statsig import StatsigGenerator
 
@@ -25,6 +26,7 @@ __all__ = [
     "SetBirthReverse",
     "LivekitTokenReverse",
     "LivekitWebSocketReverse",
+    "ImagineWebSocketReverse",
     "StatsigGenerator",
     "build_headers",
 ]

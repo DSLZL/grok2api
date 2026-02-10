@@ -11,7 +11,7 @@ from app.core.logger import logger
 from app.core.config import get_config
 from app.core.exceptions import UpstreamException
 from app.services.token.service import TokenService
-from app.services.reverse.utils.headers import build_headers
+from app.services.reverse.utils.headers import build_headers, build_ws_headers
 from app.services.reverse.utils.retry import retry_on_status
 from app.services.reverse.utils.websocket import WebSocketClient, WebSocketConnection
 
@@ -29,7 +29,6 @@ class LivekitTokenReverse:
         voice: str = "ara",
         personality: str = "assistant",
         speed: float = 1.0,
-        livekit_url: str = LIVEKIT_WS_URL,
     ) -> Dict[str, Any]:
         """Fetch LiveKit token.
         
@@ -39,7 +38,6 @@ class LivekitTokenReverse:
             voice: str, the voice to use for the request.
             personality: str, the personality to use for the request.
             speed: float, the speed to use for the request.
-            livekit_url: str, the LiveKit URL to use for the request.
 
         Returns:
             Dict[str, Any]: The LiveKit token.
@@ -69,7 +67,7 @@ class LivekitTokenReverse:
                     }
                 ).decode(),
                 "requestAgentDispatch": False,
-                "livekitUrl": livekit_url,
+                "livekitUrl": LIVEKIT_WS_URL,
                 "params": {"enable_markdown_transcript": "true"},
             }
 
@@ -100,8 +98,7 @@ class LivekitTokenReverse:
                 return response
 
             response = await retry_on_status(_do_request)
-            return response.json()
-
+            return response
 
         except Exception as e:
             # Handle upstream exception
@@ -137,108 +134,37 @@ class LivekitWebSocketReverse:
     def __init__(self) -> None:
         self._client = WebSocketClient()
 
-    def build_url(
-        self,
-        access_token: str,
-        *,
-        livekit_url: str = LIVEKIT_WS_URL,
-        auto_subscribe: bool = True,
-        sdk: str = "js",
-        version: str = "2.11.4",
-        protocol: int = 15,
-    ) -> str:
-        """Build LiveKit WebSocket URL.
+    async def connect(self, token: str) -> WebSocketConnection:
+        """Connect to the LiveKit WebSocket.
         
         Args:
-            access_token: str, the LiveKit access token.
-            livekit_url: str, the LiveKit URL to use for the request.
-            auto_subscribe: bool, whether to auto subscribe to the WebSocket.
-            sdk: str, the SDK to use for the request.
-            version: str, the version to use for the request.
-            protocol: int, the protocol to use for the request.
+            token: str, the SSO token.
 
         Returns:
-            str: The LiveKit WebSocket URL.
+            WebSocketConnection: The LiveKit WebSocket connection.
         """
-        # Build base URL
-        base = livekit_url.rstrip("/")
+        # Format URL
+        base = LIVEKIT_WS_URL.rstrip("/")
         if not base.endswith("/rtc"):
             base = f"{base}/rtc"
 
         # Build parameters
         params = {
-            "access_token": access_token,
-            "auto_subscribe": str(int(auto_subscribe)),
-            "sdk": sdk,
-            "version": version,
-            "protocol": str(protocol),
+            "access_token": token,
+            "auto_subscribe": "1",
+            "sdk": "js",
+            "version": "2.11.4",
+            "protocol": "15",
         }
 
-        return f"{base}?{urlencode(params)}"
-
-    def _build_headers(self, extra: Dict[str, str] | None = None) -> Dict[str, str]:
-        """Build LiveKit WebSocket headers."""
-        # Build headers
-        headers = {
-            "Origin": "https://grok.com",
-            "User-Agent": get_config("security.user_agent"),
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-        }
-
-        # Update headers
-        if extra:
-            headers.update(extra)
-        return headers
-
-    async def connect(
-        self,
-        access_token: str,
-        *,
-        livekit_url: str = LIVEKIT_WS_URL,
-        auto_subscribe: bool = True,
-        sdk: str = "js",
-        version: str = "2.11.4",
-        protocol: int = 15,
-        headers: Dict[str, str] | None = None,
-        timeout: float | None = None,
-    ) -> WebSocketConnection:
-        """Connect to the LiveKit WebSocket.
-        
-        Args:
-            access_token: str, the LiveKit access token.
-            livekit_url: str, the LiveKit URL to use for the request.
-            auto_subscribe: bool, whether to auto subscribe to the WebSocket.
-            sdk: str, the SDK to use for the request.
-            version: str, the version to use for the request.
-            protocol: int, the protocol to use for the request.
-            headers: Dict[str, str], the headers to send.
-            timeout: float, the timeout to use for the request.
-
-        Returns:
-            WebSocketConnection: The LiveKit WebSocket connection.
-        """
         # Build URL
-        url = self.build_url(
-            access_token,
-            livekit_url=livekit_url,
-            auto_subscribe=auto_subscribe,
-            sdk=sdk,
-            version=version,
-            protocol=protocol,
-        )
+        url = f"{base}?{urlencode(params)}"
 
         # Build WebSocket headers
-        ws_headers = self._build_headers(headers)
+        ws_headers = build_ws_headers()
 
-        # Build timeout
-        if timeout is None:
-            timeout = get_config("network.timeout")
-
-        # Connect to the LiveKit WebSocket
         try:
-            return await self._client.connect(url, headers=ws_headers, timeout=timeout)
+            return await self._client.connect(url, headers=ws_headers)
         except Exception as e:
             logger.error(f"LivekitWebSocketReverse: Connect failed, {e}")
             raise UpstreamException(

@@ -6,7 +6,7 @@ import base64
 import re
 import struct
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 from urllib.parse import unquote
 
 
@@ -41,7 +41,7 @@ class GrpcClient:
         return b"\x00" + struct.pack(">I", len(data)) + data
 
     @staticmethod
-    def _maybe_decode_grpc_web_text(body: bytes, content_type: str | None) -> bytes:
+    def _maybe_decode_grpc_web_text(body: bytes, content_type: Optional[str]) -> bytes:
         ct = (content_type or "").lower()
         if "grpc-web-text" in ct:
             compact = b"".join(body.split())
@@ -77,8 +77,8 @@ class GrpcClient:
     def parse_response(
         cls,
         body: bytes,
-        content_type: str | None = None,
-        headers: Mapping[str, str] | None = None,
+        content_type: Optional[str] = None,
+        headers: Optional[Mapping[str, str]] = None,
     ) -> Tuple[List[bytes], Dict[str, str]]:
         decoded = cls._maybe_decode_grpc_web_text(body, content_type)
 
@@ -128,26 +128,7 @@ class GrpcClient:
         return GrpcStatus(code=code, message=msg)
 
 
-def encode_grpc_web_payload(data: bytes) -> bytes:
-    return GrpcClient.encode_payload(data)
-
-
-def parse_grpc_web_response(
-    body: bytes,
-    content_type: str | None = None,
-    headers: Mapping[str, str] | None = None,
-) -> Tuple[List[bytes], Dict[str, str]]:
-    return GrpcClient.parse_response(body, content_type=content_type, headers=headers)
-
-
-def get_grpc_status(trailers: Mapping[str, str]) -> GrpcStatus:
-    return GrpcClient.get_status(trailers)
-
-
 __all__ = [
-    "encode_grpc_web_payload",
-    "parse_grpc_web_response",
-    "get_grpc_status",
     "GrpcStatus",
     "GrpcClient",
 ]

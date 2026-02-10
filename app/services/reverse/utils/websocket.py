@@ -37,14 +37,12 @@ def _normalize_socks_proxy(proxy_url: str) -> tuple[str, Optional[bool]]:
     return proxy_url, rdns
 
 
-def resolve_proxy(
-    proxy_url: str | None, ssl_context: ssl.SSLContext
-) -> tuple[aiohttp.BaseConnector, Optional[str]]:
+def resolve_proxy(proxy_url: Optional[str] = None, ssl_context: ssl.SSLContext = _default_ssl_context()) -> tuple[aiohttp.BaseConnector, Optional[str]]:
     """Resolve proxy connector.
     
     Args:
-        proxy_url: str, the proxy URL.
-        ssl_context: ssl.SSLContext, the SSL context.
+        proxy_url: Optional[str], the proxy URL. Defaults to None.
+        ssl_context: ssl.SSLContext, the SSL context. Defaults to _default_ssl_context().
 
     Returns:
         tuple[aiohttp.BaseConnector, Optional[str]]: The proxy connector and the proxy URL.
@@ -73,11 +71,7 @@ def resolve_proxy(
 class WebSocketConnection:
     """WebSocket connection wrapper."""
 
-    def __init__(
-        self,
-        session: aiohttp.ClientSession,
-        ws: aiohttp.ClientWebSocketResponse,
-    ) -> None:
+    def __init__(self, session: aiohttp.ClientSession, ws: aiohttp.ClientWebSocketResponse) -> None:
         self.session = session
         self.ws = ws
 
@@ -96,22 +90,22 @@ class WebSocketConnection:
 class WebSocketClient:
     """WebSocket client with proxy support."""
 
-    def __init__(self, proxy: str | None = None) -> None:
+    def __init__(self, proxy: Optional[str] = None) -> None:
         self.proxy = proxy or get_config("network.base_proxy_url")
         self._ssl_context = _default_ssl_context()
 
     async def connect(
         self,
         url: str,
-        headers: Mapping[str, str] | None = None,
-        timeout: float | aiohttp.ClientTimeout | None = None,
+        headers: Optional[Mapping[str, str]] = None,
+        ws_kwargs: Optional[Mapping[str, object]] = None,
     ) -> WebSocketConnection:
         """Connect to the WebSocket.
         
         Args:
             url: str, the URL to connect to.
-            headers: Mapping[str, str], the headers to send.
-            timeout: float | aiohttp.ClientTimeout | None, the timeout.
+            headers: Optional[Mapping[str, str]], the headers to send. Defaults to None.
+            ws_kwargs: Optional[Mapping[str, object]], extra ws_connect kwargs. Defaults to None.
 
         Returns:
             WebSocketConnection: The WebSocket connection.
@@ -120,20 +114,18 @@ class WebSocketClient:
         connector, proxy = resolve_proxy(self.proxy, self._ssl_context)
 
         # Build client timeout
-        client_timeout = (
-            timeout
-            if isinstance(timeout, aiohttp.ClientTimeout)
-            else aiohttp.ClientTimeout(total=timeout)
-        )
+        client_timeout = aiohttp.ClientTimeout(total=get_config("network.timeout"))
 
         # Create session
         session = aiohttp.ClientSession(connector=connector, timeout=client_timeout)
         try:
+            extra_kwargs = dict(ws_kwargs or {})
             ws = await session.ws_connect(
                 url,
                 headers=headers,
                 proxy=proxy,
                 ssl=self._ssl_context,
+                **extra_kwargs,
             )
             return WebSocketConnection(session, ws)
         except Exception:

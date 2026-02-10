@@ -10,9 +10,15 @@ from app.core.config import get_config
 from app.services.reverse.utils.statsig import StatsigGenerator
 
 
-def _build_sso_cookie(sso_token: str) -> str:
+def build_sso_cookie(sso_token: str) -> str:
     """
     Build SSO Cookie string.
+
+    Args:
+        sso_token: str, the SSO token.
+
+    Returns:
+        str: The SSO Cookie string.
     """
     # Format
     sso_token = sso_token[4:] if sso_token.startswith("sso=") else sso_token
@@ -28,20 +34,44 @@ def _build_sso_cookie(sso_token: str) -> str:
     return cookie
 
 
-def build_headers(
-    cookie_token: str,
-    content_type: Optional[str] = None,
-    origin: Optional[str] = None,
-    referer: Optional[str] = None,
-) -> Dict[str, str]:
+def build_ws_headers(token: Optional[str] = None, origin: Optional[str] = None, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """
+    Build headers for WebSocket requests.
+
+    Args:
+        token: Optional[str], the SSO token for Cookie. Defaults to None.
+        origin: Optional[str], the Origin value. Defaults to "https://grok.com" if not provided.
+        extra: Optional[Dict[str, str]], extra headers to merge. Defaults to None.
+
+    Returns:
+        Dict[str, str]: The headers dictionary.
+    """
+    headers = {
+        "Origin": origin or "https://grok.com",
+        "User-Agent": get_config("security.user_agent"),
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+
+    if token:
+        headers["Cookie"] = build_sso_cookie(token)
+
+    if extra:
+        headers.update(extra)
+
+    return headers
+
+
+def build_headers(cookie_token: str, content_type: Optional[str] = None, origin: Optional[str] = None, referer: Optional[str] = None) -> Dict[str, str]:
     """
     Build headers for reverse interfaces.
 
     Args:
-        cookie_token: The SSO token.
-        content_type: Optional Content-Type value.
-        origin: Optional Origin value. Defaults to "https://grok.com" if not provided.
-        referer: Optional Referer value. Defaults to "https://grok.com/" if not provided.
+        cookie_token: str, the SSO token.
+        content_type: Optional[str], the Content-Type value.
+        origin: Optional[str], the Origin value. Defaults to "https://grok.com" if not provided.
+        referer: Optional[str], the Referer value. Defaults to "https://grok.com/" if not provided.
 
     Returns:
         Dict[str, str]: The headers dictionary.
@@ -64,7 +94,7 @@ def build_headers(
     }
 
     # Cookie
-    headers["Cookie"] = _build_sso_cookie(cookie_token)
+    headers["Cookie"] = build_sso_cookie(cookie_token)
 
     # Content-Type and Accept/Sec-Fetch-Dest
     if content_type and content_type == "application/json":
@@ -101,4 +131,4 @@ def build_headers(
     return headers
 
 
-__all__ = ["build_headers"]
+__all__ = ["build_headers", "build_sso_cookie", "build_ws_headers"]

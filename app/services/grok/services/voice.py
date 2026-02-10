@@ -22,10 +22,11 @@ class VoiceService:
     ) -> Dict[str, Any]:
         browser = get_config("security.browser")
         async with AsyncSession(impersonate=browser) as session:
-            return await LivekitTokenReverse.request(
+            response = await LivekitTokenReverse.request(
                 session,
                 token=token,
                 voice=voice,
                 personality=personality,
                 speed=speed,
             )
+            return response.json()
