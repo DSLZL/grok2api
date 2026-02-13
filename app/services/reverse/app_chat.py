@@ -25,17 +25,12 @@ class AppChatReverse:
         model: str,
         mode: str = None,
         file_attachments: List[str] = None,
-        image_attachments: List[str] = None,
         tool_overrides: Dict[str, Any] = None,
         model_config_override: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """Build chat payload for Grok app-chat API."""
 
-        attachments = []
-        if file_attachments:
-            attachments.extend(file_attachments)
-        if image_attachments:
-            attachments.extend(image_attachments)
+        attachments = file_attachments or []
 
         payload = {
             "deviceEnvInfo": {
@@ -86,7 +81,6 @@ class AppChatReverse:
         model: str,
         mode: str = None,
         file_attachments: List[str] = None,
-        image_attachments: List[str] = None,
         tool_overrides: Dict[str, Any] = None,
         model_config_override: Dict[str, Any] = None,
     ) -> Any:
@@ -99,7 +93,6 @@ class AppChatReverse:
             model: str, the model to use.
             mode: str, the mode to use.
             file_attachments: List[str], the file attachments to send.
-            image_attachments: List[str], the image attachments to send.
             tool_overrides: Dict[str, Any], the tool overrides to use.
             model_config_override: Dict[str, Any], the model config override to use.
 
@@ -125,7 +118,6 @@ class AppChatReverse:
                 model=model,
                 mode=mode,
                 file_attachments=file_attachments,
-                image_attachments=image_attachments,
                 tool_overrides=tool_overrides,
                 model_config_override=model_config_override,
             )

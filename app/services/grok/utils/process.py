@@ -8,19 +8,20 @@ from typing import Any, AsyncGenerator, Optional, AsyncIterable, List, TypeVar
 
 from app.core.config import get_config
 from app.core.logger import logger
+from app.core.exceptions import StreamIdleTimeoutError
 from app.services.grok.utils.download import DownloadService
 
 
 T = TypeVar("T")
 
 
-def _is_http2_stream_error(e: Exception) -> bool:
+def _is_http2_error(e: Exception) -> bool:
     """检查是否为 HTTP/2 流错误"""
     err_str = str(e).lower()
     return "http/2" in err_str or "curl: (92)" in err_str or "stream" in err_str
 
 
-def _normalize_stream_line(line: Any) -> Optional[str]:
+def _normalize_line(line: Any) -> Optional[str]:
     """规范化流式响应行，兼容 SSE data 前缀与空行"""
     if line is None:
         return None
@@ -38,7 +39,7 @@ def _normalize_stream_line(line: Any) -> Optional[str]:
     return text
 
 
-def _collect_image_urls(obj: Any) -> List[str]:
+def _collect_images(obj: Any) -> List[str]:
     """递归收集响应中的图片 URL"""
     urls: List[str] = []
     seen = set()
@@ -67,14 +68,6 @@ def _collect_image_urls(obj: Any) -> List[str]:
 
     walk(obj)
     return urls
-
-
-class StreamIdleTimeoutError(Exception):
-    """流空闲超时错误"""
-
-    def __init__(self, idle_seconds: float):
-        self.idle_seconds = idle_seconds
-        super().__init__(f"Stream idle timeout after {idle_seconds}s")
 
 
 async def _with_idle_timeout(
@@ -138,9 +131,8 @@ class BaseProcessor:
 
 __all__ = [
     "BaseProcessor",
-    "StreamIdleTimeoutError",
     "_with_idle_timeout",
-    "_normalize_stream_line",
-    "_collect_image_urls",
-    "_is_http2_stream_error",
+    "_normalize_line",
+    "_collect_images",
+    "_is_http2_error",
 ]

@@ -51,7 +51,7 @@ class NSFWService:
                             status = err.details["status"]
                         else:
                             status = getattr(err, "status_code", None)
-                        if status in (401, 403):
+                        if status == 401:
                             await mgr.record_fail(token, status, reason)
                         return status or 0
 

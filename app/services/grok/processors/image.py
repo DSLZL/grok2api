@@ -15,14 +15,13 @@ from curl_cffi.requests.errors import RequestsError
 from app.core.config import get_config
 from app.core.logger import logger
 from app.core.storage import DATA_DIR
-from app.core.exceptions import UpstreamException
-from .base import (
+from app.core.exceptions import UpstreamException, StreamIdleTimeoutError
+from app.services.grok.utils.process import (
     BaseProcessor,
-    StreamIdleTimeoutError,
     _with_idle_timeout,
-    _normalize_stream_line,
-    _collect_image_urls,
-    _is_http2_stream_error,
+    _normalize_line,
+    _collect_images,
+    _is_http2_error,
 )
 
 
@@ -57,7 +56,7 @@ class ImageStreamProcessor(BaseProcessor):
 
         try:
             async for line in _with_idle_timeout(response, idle_timeout, self.model):
-                line = _normalize_stream_line(line)
+                line = _normalize_line(line)
                 if not line:
                     continue
                 try:
@@ -90,7 +89,7 @@ class ImageStreamProcessor(BaseProcessor):
 
                 # modelResponse
                 if mr := resp.get("modelResponse"):
-                    if urls := _collect_image_urls(mr):
+                    if urls := _collect_images(mr):
                         for url in urls:
                             if self.response_format == "url":
                                 processed = await self.process_url(url, "image")
@@ -155,7 +154,7 @@ class ImageStreamProcessor(BaseProcessor):
                 },
             )
         except RequestsError as e:
-            if _is_http2_stream_error(e):
+            if _is_http2_error(e):
                 logger.warning(f"HTTP/2 stream error in image: {e}")
                 raise UpstreamException(
                     message="Upstream connection closed unexpectedly",
@@ -192,7 +191,7 @@ class ImageCollectProcessor(BaseProcessor):
 
         try:
             async for line in _with_idle_timeout(response, idle_timeout, self.model):
-                line = _normalize_stream_line(line)
+                line = _normalize_line(line)
                 if not line:
                     continue
                 try:
@@ -203,7 +202,7 @@ class ImageCollectProcessor(BaseProcessor):
                 resp = data.get("result", {}).get("response", {})
 
                 if mr := resp.get("modelResponse"):
-                    if urls := _collect_image_urls(mr):
+                    if urls := _collect_images(mr):
                         for url in urls:
                             if self.response_format == "url":
                                 processed = await self.process_url(url, "image")
@@ -234,7 +233,7 @@ class ImageCollectProcessor(BaseProcessor):
         except StreamIdleTimeoutError as e:
             logger.warning(f"Image collect idle timeout: {e}")
         except RequestsError as e:
-            if _is_http2_stream_error(e):
+            if _is_http2_error(e):
                 logger.warning(f"HTTP/2 stream error in image collect: {e}")
             else:
                 logger.error(f"Image collect request error: {e}")

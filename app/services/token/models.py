@@ -130,8 +130,8 @@ class TokenInfo(BaseModel):
 
     def record_fail(self, status_code: int = 401, reason: str = ""):
         """记录失败，达到阈值后自动标记为 expired"""
-        # 401/403 错误计入失败（都表示认证/授权失败）
-        if status_code not in (401, 403):
+        # 仅 401 计入失败
+        if status_code != 401:
             return
 
         self.fail_count += 1

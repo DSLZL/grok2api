@@ -101,6 +101,14 @@ class UpstreamException(AppException):
         self.details = details
 
 
+class StreamIdleTimeoutError(Exception):
+    """流空闲超时错误"""
+
+    def __init__(self, idle_seconds: float):
+        self.idle_seconds = idle_seconds
+        super().__init__(f"Stream idle timeout after {idle_seconds}s")
+
+
 # ============= 异常处理器 =============
 
 
@@ -219,6 +227,7 @@ __all__ = [
     "ValidationException",
     "AuthenticationException",
     "UpstreamException",
+    "StreamIdleTimeoutError",
     "error_response",
     "register_exception_handlers",
 ]

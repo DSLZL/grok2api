@@ -2,10 +2,14 @@
 Grok Chat 服务
 """
 
-from typing import Dict, List, Any
-from dataclasses import dataclass
+import asyncio
+import re
+import uuid
+from typing import Dict, List, Any, AsyncGenerator, AsyncIterable
 
+import orjson
 from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.errors import RequestsError
 
 from app.core.logger import logger
 from app.core.config import get_config
@@ -14,39 +18,29 @@ from app.core.exceptions import (
     ValidationException,
     ErrorType,
     UpstreamException,
+    StreamIdleTimeoutError,
 )
 from app.services.grok.services.model import ModelService
 from app.services.grok.utils.upload import UploadService
-from app.services.grok.processors import StreamProcessor, CollectProcessor
+from app.services.grok.utils import process as proc_base
 from app.services.reverse.app_chat import AppChatReverse
 from app.services.grok.utils.stream import wrap_stream_with_usage
 from app.services.token import get_token_manager, EffortType
-
-
-@dataclass
-class ChatRequest:
-    """聊天请求数据"""
-
-    model: str
-    messages: List[Dict[str, Any]]
-    stream: bool = None
-    think: bool = None
 
 
 class MessageExtractor:
     """消息内容提取器"""
 
     @staticmethod
-    def extract(
-        messages: List[Dict[str, Any]], is_video: bool = False
-    ) -> tuple[str, List[tuple[str, str]]]:
-        """从 OpenAI 消息格式提取内容，返回 (text, attachments)"""
+    def extract(messages: List[Dict[str, Any]]) -> tuple[str, List[str], List[str]]:
+        """从 OpenAI 消息格式提取内容，返回 (text, file_attachments, image_attachments)"""
         texts = []
-        attachments = []
+        file_attachments: List[str] = []
+        image_attachments: List[str] = []
         extracted = []
 
         for msg in messages:
-            role = msg.get("role", "")
+            role = msg.get("role", "") or "user"
             content = msg.get("content", "")
             parts = []
 
@@ -63,35 +57,21 @@ class MessageExtractor:
 
                     elif item_type == "image_url":
                         image_data = item.get("image_url", {})
-                        url = (
-                            image_data.get("url", "")
-                            if isinstance(image_data, dict)
-                            else str(image_data)
-                        )
+                        url = image_data.get("url", "")
                         if url:
-                            attachments.append(("image", url))
+                            image_attachments.append(url)
 
                     elif item_type == "input_audio":
-                        if is_video:
-                            raise ValueError("视频模型不支持 input_audio 类型")
                         audio_data = item.get("input_audio", {})
-                        data = (
-                            audio_data.get("data", "")
-                            if isinstance(audio_data, dict)
-                            else str(audio_data)
-                        )
+                        data = audio_data.get("data", "")
                         if data:
-                            attachments.append(("audio", data))
+                            file_attachments.append(data)
 
                     elif item_type == "file":
-                        if is_video:
-                            raise ValueError("视频模型不支持 file 类型")
                         file_data = item.get("file", {})
-                        url = file_data.get("url", "") or file_data.get("data", "")
-                        if isinstance(file_data, str):
-                            url = file_data
-                        if url:
-                            attachments.append(("file", url))
+                        raw = file_data.get("file_data", "")
+                        if raw:
+                            file_attachments.append(raw)
 
             if parts:
                 extracted.append({"role": role, "text": "\n".join(parts)})
@@ -111,35 +91,11 @@ class MessageExtractor:
             text = item["text"]
             texts.append(text if i == last_user_index else f"{role}: {text}")
 
-        return "\n\n".join(texts), attachments
-
-
-class ChatRequestBuilder:
-    """请求构造器"""
-
-    @staticmethod
-    def build_payload(
-        message: str,
-        model: str,
-        mode: str = None,
-        file_attachments: List[str] = None,
-        image_attachments: List[str] = None,
-    ) -> Dict[str, Any]:
-        """构造请求体"""
-        return AppChatReverse.build_payload(
-            message=message,
-            model=model,
-            mode=mode,
-            file_attachments=file_attachments,
-            image_attachments=image_attachments,
-        )
+        return "\n\n".join(texts), file_attachments, image_attachments
 
 
 class GrokChatService:
     """Grok API 调用服务"""
-
-    def __init__(self):
-        pass
 
     async def chat(
         self,
@@ -149,7 +105,6 @@ class GrokChatService:
         mode: str = None,
         stream: bool = None,
         file_attachments: List[str] = None,
-        image_attachments: List[str] = None,
         tool_overrides: Dict[str, Any] = None,
         model_config_override: Dict[str, Any] = None,
     ):
@@ -171,7 +126,6 @@ class GrokChatService:
                 model=model,
                 mode=mode,
                 file_attachments=file_attachments,
-                image_attachments=image_attachments,
                 tool_overrides=tool_overrides,
                 model_config_override=model_config_override,
             )
@@ -182,44 +136,58 @@ class GrokChatService:
 
         return stream_response
 
-    async def chat_openai(self, token: str, request: ChatRequest):
+    async def chat_openai(
+        self,
+        token: str,
+        model: str,
+        messages: List[Dict[str, Any]],
+        stream: bool = None,
+        reasoning_effort: str | None = None,
+        temperature: float = 0.8,
+        top_p: float = 0.95,
+    ):
         """OpenAI 兼容接口"""
-        model_info = ModelService.get(request.model)
+        model_info = ModelService.get(model)
         if not model_info:
-            raise ValidationException(f"Unknown model: {request.model}")
+            raise ValidationException(f"Unknown model: {model}")
 
         grok_model = model_info.grok_model
         mode = model_info.model_mode
-        is_video = model_info.is_video
-
         # 提取消息和附件
-        try:
-            message, attachments = MessageExtractor.extract(
-                request.messages, is_video=is_video
-            )
-            logger.debug(
-                f"Extracted message length={len(message)}, attachments={len(attachments)}"
-            )
-        except ValueError as e:
-            raise ValidationException(str(e))
+        message, file_attachments, image_attachments = MessageExtractor.extract(messages)
+        logger.debug(
+            "Extracted message length=%s, files=%s, images=%s",
+            len(message),
+            len(file_attachments),
+            len(image_attachments),
+        )
 
         # 上传附件
-        file_ids = []
-        if attachments:
+        file_ids: List[str] = []
+        image_ids: List[str] = []
+        if file_attachments or image_attachments:
             upload_service = UploadService()
             try:
-                for attach_type, attach_data in attachments:
+                for attach_data in file_attachments:
                     file_id, _ = await upload_service.upload_file(attach_data, token)
                     file_ids.append(file_id)
-                    logger.debug(
-                        f"Attachment uploaded: type={attach_type}, file_id={file_id}"
-                    )
+                    logger.debug(f"Attachment uploaded: type=file, file_id={file_id}")
+                for attach_data in image_attachments:
+                    file_id, _ = await upload_service.upload_file(attach_data, token)
+                    image_ids.append(file_id)
+                    logger.debug(f"Attachment uploaded: type=image, file_id={file_id}")
             finally:
                 await upload_service.close()
 
-        stream = (
-            request.stream if request.stream is not None else get_config("chat.stream")
-        )
+        all_attachments = file_ids + image_ids
+        stream = stream if stream is not None else get_config("chat.stream")
+
+        model_config_override = {
+            "temperature": temperature,
+            "topP": top_p,
+        }
+        if reasoning_effort is not None:
+            model_config_override["reasoningEffort"] = reasoning_effort
 
         response = await self.chat(
             token,
@@ -227,11 +195,11 @@ class GrokChatService:
             grok_model,
             mode,
             stream,
-            file_attachments=file_ids,
-            image_attachments=[],
+            file_attachments=all_attachments,
+            model_config_override=model_config_override,
         )
 
-        return response, stream, request.model
+        return response, stream, model
 
 
 class ChatService:
@@ -242,21 +210,21 @@ class ChatService:
         model: str,
         messages: List[Dict[str, Any]],
         stream: bool = None,
-        thinking: str = None,
+        reasoning_effort: str | None = None,
+        temperature: float = 0.8,
+        top_p: float = 0.95,
     ):
         """Chat Completions 入口"""
         # 获取 token
         token_mgr = await get_token_manager()
         await token_mgr.reload_if_stale()
 
-        # 解析参数（只需解析一次）
-        think = {"enabled": True, "disabled": False}.get(thinking)
+        # 解析参数
+        if reasoning_effort is None:
+            show_think = get_config("chat.thinking")
+        else:
+            show_think = reasoning_effort != "none"
         is_stream = stream if stream is not None else get_config("chat.stream")
-
-        # 构造请求（只需构造一次）
-        chat_request = ChatRequest(
-            model=model, messages=messages, stream=is_stream, think=think
-        )
 
         # 跨 Token 重试循环
         tried_tokens = set()
@@ -264,7 +232,7 @@ class ChatService:
         last_error = None
 
         for attempt in range(max_token_retries):
-            # 选择 token（排除已失败的）
+            # 选择 token
             token = None
             for pool_name in ModelService.pool_candidates_for_model(model):
                 token = token_mgr.get_token(pool_name, exclude=tried_tokens)
@@ -296,12 +264,20 @@ class ChatService:
             try:
                 # 请求 Grok
                 service = GrokChatService()
-                response, _, model_name = await service.chat_openai(token, chat_request)
+                response, _, model_name = await service.chat_openai(
+                    token,
+                    model,
+                    messages,
+                    stream=is_stream,
+                    reasoning_effort=reasoning_effort,
+                    temperature=temperature,
+                    top_p=top_p,
+                )
 
                 # 处理响应
                 if is_stream:
                     logger.debug(f"Processing stream response: model={model}")
-                    processor = StreamProcessor(model_name, token, think)
+                    processor = StreamProcessor(model_name, token, show_think)
                     return wrap_stream_with_usage(
                         processor.process(response), token_mgr, token, model
                     )
@@ -349,10 +325,404 @@ class ChatService:
         )
 
 
+class StreamProcessor(proc_base.BaseProcessor):
+    """Stream response processor."""
+
+    def __init__(self, model: str, token: str = "", show_think: bool = None):
+        super().__init__(model, token)
+        self.response_id: str = None
+        self.fingerprint: str = ""
+        self.think_opened: bool = False
+        self.role_sent: bool = False
+        self.filter_tags = get_config("chat.filter_tags")
+        self._tag_buffer: str = ""
+        self._in_filter_tag: bool = False
+
+        self.show_think = bool(show_think)
+
+    def _filter_token(self, token: str) -> str:
+        """Filter special tags (supports cross-token tag filtering)."""
+        if not self.filter_tags:
+            return token
+
+        result = []
+        i = 0
+        while i < len(token):
+            char = token[i]
+
+            if self._in_filter_tag:
+                self._tag_buffer += char
+                if char == ">":
+                    if "/>" in self._tag_buffer:
+                        self._in_filter_tag = False
+                        self._tag_buffer = ""
+                    else:
+                        for tag in self.filter_tags:
+                            if f"</{tag}>" in self._tag_buffer:
+                                self._in_filter_tag = False
+                                self._tag_buffer = ""
+                                break
+                i += 1
+                continue
+
+            if char == "<":
+                remaining = token[i:]
+                tag_started = False
+                for tag in self.filter_tags:
+                    if remaining.startswith(f"<{tag}"):
+                        tag_started = True
+                        break
+                    if len(remaining) < len(tag) + 1:
+                        for j in range(1, len(remaining) + 1):
+                            if f"<{tag}".startswith(remaining[:j]):
+                                tag_started = True
+                                break
+
+                if tag_started:
+                    self._in_filter_tag = True
+                    self._tag_buffer = char
+                    i += 1
+                    continue
+
+            result.append(char)
+            i += 1
+
+        return "".join(result)
+
+    def _sse(self, content: str = "", role: str = None, finish: str = None) -> str:
+        """Build SSE response."""
+        delta = {}
+        if role:
+            delta["role"] = role
+            delta["content"] = ""
+        elif content:
+            delta["content"] = content
+
+        chunk = {
+            "id": self.response_id or f"chatcmpl-{uuid.uuid4().hex[:24]}",
+            "object": "chat.completion.chunk",
+            "created": self.created,
+            "model": self.model,
+            "system_fingerprint": self.fingerprint,
+            "choices": [
+                {"index": 0, "delta": delta, "logprobs": None, "finish_reason": finish}
+            ],
+        }
+        return f"data: {orjson.dumps(chunk).decode()}\n\n"
+
+    async def process(self, response: AsyncIterable[bytes]) -> AsyncGenerator[str, None]:
+        """Process stream response.
+        
+        Args:
+            response: AsyncIterable[bytes], async iterable of bytes
+
+        Returns:
+            AsyncGenerator[str, None], async generator of strings
+        """
+        idle_timeout = get_config("timeout.stream_idle_timeout")
+
+        try:
+            async for line in proc_base._with_idle_timeout(
+                response, idle_timeout, self.model
+            ):
+                line = proc_base._normalize_line(line)
+                if not line:
+                    continue
+                try:
+                    data = orjson.loads(line)
+                except orjson.JSONDecodeError:
+                    continue
+
+                resp = data.get("result", {}).get("response", {})
+                is_thinking = bool(resp.get("isThinking"))
+                # isThinking controls <think> tagging
+                # when absent, treat as False
+
+                if (llm := resp.get("llmInfo")) and not self.fingerprint:
+                    self.fingerprint = llm.get("modelHash", "")
+                if rid := resp.get("responseId"):
+                    self.response_id = rid
+
+                if not self.role_sent:
+                    yield self._sse(role="assistant")
+                    self.role_sent = True
+
+                if img := resp.get("streamingImageGenerationResponse"):
+                    if not self.show_think:
+                        continue
+                    if is_thinking and not self.think_opened:
+                        yield self._sse("<think>\n")
+                        self.think_opened = True
+                    if (not is_thinking) and self.think_opened:
+                        yield self._sse("\n</think>\n")
+                        self.think_opened = False
+                    idx = img.get("imageIndex", 0) + 1
+                    progress = img.get("progress", 0)
+                    yield self._sse(
+                        f"正在生成第{idx}张图片中，当前进度{progress}%\n"
+                    )
+                    continue
+
+                if mr := resp.get("modelResponse"):
+                    for url in proc_base._collect_images(mr):
+                        parts = url.split("/")
+                        img_id = parts[-2] if len(parts) >= 2 else "image"
+                        dl_service = self._get_dl()
+                        rendered = await dl_service.render_image(
+                            url, self.token, img_id
+                        )
+                        yield self._sse(f"{rendered}\n")
+
+                    if (
+                        (meta := mr.get("metadata", {}))
+                        .get("llm_info", {})
+                        .get("modelHash")
+                    ):
+                        self.fingerprint = meta["llm_info"]["modelHash"]
+                    continue
+
+                if card := resp.get("cardAttachment"):
+                    json_data = card.get("jsonData")
+                    if isinstance(json_data, str) and json_data.strip():
+                        try:
+                            card_data = orjson.loads(json_data)
+                        except orjson.JSONDecodeError:
+                            card_data = None
+                        if isinstance(card_data, dict):
+                            image = card_data.get("image") or {}
+                            original = image.get("original")
+                            title = image.get("title") or ""
+                            if original:
+                                title_safe = title.replace("\n", " ").strip()
+                                if title_safe:
+                                    yield self._sse(f"![{title_safe}]({original})\n")
+                                else:
+                                    yield self._sse(f"![image]({original})\n")
+                    continue
+
+                if (token := resp.get("token")) is not None:
+                    if not token:
+                        continue
+                    filtered = self._filter_token(token)
+                    if not filtered:
+                        continue
+                    if is_thinking:
+                        if not self.show_think:
+                            continue
+                        if not self.think_opened:
+                            yield self._sse("<think>\n")
+                            self.think_opened = True
+                    else:
+                        if self.think_opened:
+                            yield self._sse("\n</think>\n")
+                            self.think_opened = False
+                    yield self._sse(filtered)
+
+            if self.think_opened:
+                yield self._sse("</think>\n")
+            yield self._sse(finish="stop")
+            yield "data: [DONE]\n\n"
+        except asyncio.CancelledError:
+            logger.debug("Stream cancelled by client", extra={"model": self.model})
+        except StreamIdleTimeoutError as e:
+            raise UpstreamException(
+                message=f"Stream idle timeout after {e.idle_seconds}s",
+                status_code=504,
+                details={
+                    "error": str(e),
+                    "type": "stream_idle_timeout",
+                    "idle_seconds": e.idle_seconds,
+                },
+            )
+        except RequestsError as e:
+            if proc_base._is_http2_error(e):
+                logger.warning(f"HTTP/2 stream error: {e}", extra={"model": self.model})
+                raise UpstreamException(
+                    message="Upstream connection closed unexpectedly",
+                    status_code=502,
+                    details={"error": str(e), "type": "http2_stream_error"},
+                )
+            logger.error(f"Stream request error: {e}", extra={"model": self.model})
+            raise UpstreamException(
+                message=f"Upstream request failed: {e}",
+                status_code=502,
+                details={"error": str(e)},
+            )
+        except Exception as e:
+            logger.error(
+                f"Stream processing error: {e}",
+                extra={"model": self.model, "error_type": type(e).__name__},
+            )
+            raise
+        finally:
+            await self.close()
+
+
+class CollectProcessor(proc_base.BaseProcessor):
+    """Non-stream response processor."""
+
+    def __init__(self, model: str, token: str = ""):
+        super().__init__(model, token)
+        self.filter_tags = get_config("chat.filter_tags")
+
+    def _filter_content(self, content: str) -> str:
+        """Filter special tags in content."""
+        if not content or not self.filter_tags:
+            return content
+
+        result = content
+        for tag in self.filter_tags:
+            pattern = rf"<{re.escape(tag)}[^>]*>.*?</{re.escape(tag)}>|<{re.escape(tag)}[^>]*/>"
+            result = re.sub(pattern, "", result, flags=re.DOTALL)
+
+        return result
+
+    async def process(self, response: AsyncIterable[bytes]) -> dict[str, Any]:
+        """Process and collect full response."""
+        response_id = ""
+        fingerprint = ""
+        content = ""
+        idle_timeout = get_config("timeout.stream_idle_timeout")
+
+        try:
+            async for line in proc_base._with_idle_timeout(
+                response, idle_timeout, self.model
+            ):
+                line = proc_base._normalize_line(line)
+                if not line:
+                    continue
+                try:
+                    data = orjson.loads(line)
+                except orjson.JSONDecodeError:
+                    continue
+
+                resp = data.get("result", {}).get("response", {})
+
+                if (llm := resp.get("llmInfo")) and not fingerprint:
+                    fingerprint = llm.get("modelHash", "")
+
+                if mr := resp.get("modelResponse"):
+                    response_id = mr.get("responseId", "")
+                    content = mr.get("message", "")
+
+                    card_map: dict[str, tuple[str, str]] = {}
+                    for raw in mr.get("cardAttachmentsJson") or []:
+                        if not isinstance(raw, str) or not raw.strip():
+                            continue
+                        try:
+                            card_data = orjson.loads(raw)
+                        except orjson.JSONDecodeError:
+                            continue
+                        if not isinstance(card_data, dict):
+                            continue
+                        card_id = card_data.get("id")
+                        image = card_data.get("image") or {}
+                        original = image.get("original")
+                        if not card_id or not original:
+                            continue
+                        title = image.get("title") or ""
+                        card_map[card_id] = (title, original)
+
+                    if content and card_map:
+                        def _render_card(match: re.Match) -> str:
+                            card_id = match.group(1)
+                            item = card_map.get(card_id)
+                            if not item:
+                                return ""
+                            title, original = item
+                            title_safe = title.replace("\n", " ").strip() or "image"
+                            prefix = ""
+                            if match.start() > 0:
+                                prev = content[match.start() - 1]
+                                if prev not in ("\n", "\r"):
+                                    prefix = "\n"
+                            return f"{prefix}![{title_safe}]({original})"
+
+                        content = re.sub(
+                            r'<grok:render[^>]*card_id="([^"]+)"[^>]*>.*?</grok:render>',
+                            _render_card,
+                            content,
+                            flags=re.DOTALL,
+                        )
+
+                    if urls := proc_base._collect_images(mr):
+                        content += "\n"
+                        for url in urls:
+                            parts = url.split("/")
+                            img_id = parts[-2] if len(parts) >= 2 else "image"
+                            dl_service = self._get_dl()
+                            rendered = await dl_service.render_image(
+                                url, self.token, img_id
+                            )
+                            content += f"{rendered}\n"
+
+                    if (
+                        (meta := mr.get("metadata", {}))
+                        .get("llm_info", {})
+                        .get("modelHash")
+                    ):
+                        fingerprint = meta["llm_info"]["modelHash"]
+
+        except asyncio.CancelledError:
+            logger.debug("Collect cancelled by client", extra={"model": self.model})
+        except StreamIdleTimeoutError as e:
+            logger.warning(f"Collect idle timeout: {e}", extra={"model": self.model})
+        except RequestsError as e:
+            if proc_base._is_http2_error(e):
+                logger.warning(
+                    f"HTTP/2 stream error in collect: {e}", extra={"model": self.model}
+                )
+            else:
+                logger.error(f"Collect request error: {e}", extra={"model": self.model})
+        except Exception as e:
+            logger.error(
+                f"Collect processing error: {e}",
+                extra={"model": self.model, "error_type": type(e).__name__},
+            )
+        finally:
+            await self.close()
+
+        content = self._filter_content(content)
+
+        return {
+            "id": response_id,
+            "object": "chat.completion",
+            "created": self.created,
+            "model": self.model,
+            "system_fingerprint": fingerprint,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                        "refusal": None,
+                        "annotations": [],
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "text_tokens": 0,
+                    "audio_tokens": 0,
+                    "image_tokens": 0,
+                },
+                "completion_tokens_details": {
+                    "text_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                },
+            },
+        }
+
+
 __all__ = [
     "GrokChatService",
-    "ChatRequest",
-    "ChatRequestBuilder",
     "MessageExtractor",
     "ChatService",
 ]

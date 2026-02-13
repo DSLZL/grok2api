@@ -224,7 +224,7 @@ class VideoService:
         model: str,
         messages: list,
         stream: bool = None,
-        thinking: str = None,
+        reasoning_effort: str | None = None,
         aspect_ratio: str = "3:2",
         video_length: int = 6,
         resolution: str = "480p",
@@ -256,29 +256,30 @@ class VideoService:
         if token.startswith("sso="):
             token = token[4:]
 
-        think = {"enabled": True, "disabled": False}.get(thinking)
+        if reasoning_effort is None:
+            show_think = get_config("chat.thinking")
+        else:
+            show_think = reasoning_effort != "none"
         is_stream = stream if stream is not None else get_config("chat.stream")
 
         # Extract content.
         from app.services.grok.services.chat import MessageExtractor
         from app.services.grok.utils.upload import UploadService
 
-        try:
-            prompt, attachments = MessageExtractor.extract(messages, is_video=True)
-        except ValueError as e:
-            raise ValidationException(str(e))
+        prompt, file_attachments, image_attachments = MessageExtractor.extract(
+            messages, is_video=True
+        )
 
         # Handle image attachments.
         image_url = None
-        if attachments:
+        if image_attachments:
             upload_service = UploadService()
             try:
-                for attach_type, attach_data in attachments:
-                    if attach_type == "image":
-                        _, file_uri = await upload_service.upload_file(attach_data, token)
-                        image_url = f"https://assets.grok.com/{file_uri}"
-                        logger.info(f"Image uploaded for video: {image_url}")
-                        break
+                for attach_data in image_attachments:
+                    _, file_uri = await upload_service.upload_file(attach_data, token)
+                    image_url = f"https://assets.grok.com/{file_uri}"
+                    logger.info(f"Image uploaded for video: {image_url}")
+                    break
             finally:
                 await upload_service.close()
 
@@ -295,7 +296,7 @@ class VideoService:
 
         # Process response.
         if is_stream:
-            processor = VideoStreamProcessor(model, token, think)
+            processor = VideoStreamProcessor(model, token, show_think)
             return wrap_stream_with_usage(
                 processor.process(response), token_mgr, token, model
             )

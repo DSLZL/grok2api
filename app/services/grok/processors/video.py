@@ -11,29 +11,25 @@ from curl_cffi.requests.errors import RequestsError
 
 from app.core.config import get_config
 from app.core.logger import logger
-from app.core.exceptions import UpstreamException
-from .base import (
+from app.core.exceptions import UpstreamException, StreamIdleTimeoutError
+from app.services.grok.utils.process import (
     BaseProcessor,
-    StreamIdleTimeoutError,
     _with_idle_timeout,
-    _normalize_stream_line,
-    _is_http2_stream_error,
+    _normalize_line,
+    _is_http2_error,
 )
 
 
 class VideoStreamProcessor(BaseProcessor):
     """Video stream response processor."""
 
-    def __init__(self, model: str, token: str = "", think: bool = None):
+    def __init__(self, model: str, token: str = "", show_think: bool = None):
         super().__init__(model, token)
         self.response_id: Optional[str] = None
         self.think_opened: bool = False
         self.role_sent: bool = False
 
-        if think is None:
-            self.show_think = get_config("chat.thinking")
-        else:
-            self.show_think = think
+        self.show_think = bool(show_think)
 
     def _sse(self, content: str = "", role: str = None, finish: str = None) -> str:
         """Build SSE response."""
@@ -63,7 +59,7 @@ class VideoStreamProcessor(BaseProcessor):
 
         try:
             async for line in _with_idle_timeout(response, idle_timeout, self.model):
-                line = _normalize_stream_line(line)
+                line = _normalize_line(line)
                 if not line:
                     continue
                 try:
@@ -127,7 +123,7 @@ class VideoStreamProcessor(BaseProcessor):
                 },
             )
         except RequestsError as e:
-            if _is_http2_stream_error(e):
+            if _is_http2_error(e):
                 logger.warning(
                     f"HTTP/2 stream error in video: {e}", extra={"model": self.model}
                 )
@@ -167,7 +163,7 @@ class VideoCollectProcessor(BaseProcessor):
 
         try:
             async for line in _with_idle_timeout(response, idle_timeout, self.model):
-                line = _normalize_stream_line(line)
+                line = _normalize_line(line)
                 if not line:
                     continue
                 try:
@@ -199,7 +195,7 @@ class VideoCollectProcessor(BaseProcessor):
                 f"Video collect idle timeout: {e}", extra={"model": self.model}
             )
         except RequestsError as e:
-            if _is_http2_stream_error(e):
+            if _is_http2_error(e):
                 logger.warning(
                     f"HTTP/2 stream error in video collect: {e}",
                     extra={"model": self.model},

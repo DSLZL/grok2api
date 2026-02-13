@@ -389,7 +389,7 @@ class TokenManager:
                     status = e.details["status"]
                 else:
                     status = getattr(e, "status_code", None)
-                if status in (401, 403):
+                if status == 401:
                     await self.record_fail(token_str, status, "rate_limits_auth_failed")
             logger.warning(
                 f"Token {raw_token[:10]}...: API sync failed, fallback to local ({e})"
@@ -424,7 +424,7 @@ class TokenManager:
         for pool in self.pools.values():
             token = pool.get(raw_token)
             if token:
-                if status_code in (401, 403):
+                if status_code == 401:
                     token.record_fail(status_code, reason)
                     logger.warning(
                         f"Token {raw_token[:10]}...: recorded {status_code} failure "
