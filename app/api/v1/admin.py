@@ -30,7 +30,7 @@ from app.core.logger import logger
 from app.api.v1.image import resolve_aspect_ratio
 from app.services.grok.services.voice import VoiceService
 from app.services.grok.services.image import ImageGenerationService
-from app.services.grok.models.model import ModelService
+from app.services.grok.services.model import ModelService
 
 TEMPLATE_DIR = Path(__file__).parent.parent.parent / "static"
 

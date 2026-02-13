@@ -15,7 +15,7 @@ from app.core.exceptions import (
     ErrorType,
     UpstreamException,
 )
-from app.services.grok.models.model import ModelService
+from app.services.grok.services.model import ModelService
 from app.services.grok.utils.upload import UploadService
 from app.services.grok.processors import StreamProcessor, CollectProcessor
 from app.services.reverse.app_chat import AppChatReverse

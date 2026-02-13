@@ -14,7 +14,7 @@ from app.core.exceptions import (
     ValidationException,
     ErrorType,
 )
-from app.services.grok.models.model import ModelService
+from app.services.grok.services.model import ModelService
 from app.services.token import get_token_manager, EffortType
 from app.services.grok.processors import VideoStreamProcessor, VideoCollectProcessor
 from app.services.grok.utils.stream import wrap_stream_with_usage

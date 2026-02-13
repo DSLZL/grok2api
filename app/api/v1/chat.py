@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.grok.services.chat import ChatService
-from app.services.grok.models.model import ModelService
+from app.services.grok.services.model import ModelService
 from app.core.exceptions import ValidationException
 
 

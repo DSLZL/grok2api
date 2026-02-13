@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.services.grok.services.image import ImageGenerationService
 from app.services.grok.services.image_edit import ImageEditService
-from app.services.grok.models.model import ModelService
+from app.services.grok.services.model import ModelService
 from app.services.token import get_token_manager
 from app.core.exceptions import ValidationException, AppException, ErrorType
 from app.core.config import get_config
