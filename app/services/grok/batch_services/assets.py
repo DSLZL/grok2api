@@ -3,14 +3,13 @@ Batch assets service.
 """
 
 import asyncio
-from typing import Callable, Awaitable, Dict, Any, Optional, List
+from typing import Dict, List, Optional
 
 from curl_cffi.requests import AsyncSession
 
 from app.core.config import get_config
 from app.core.logger import logger
 from app.services.reverse import AssetsListReverse, AssetsDeleteReverse
-from app.services.grok.utils.locks import _get_assets_semaphore
 from app.services.grok.utils.batch import run_in_batches
 
 
@@ -31,10 +30,34 @@ class BaseAssetsService:
             self._session = None
 
 
+_LIST_SEMAPHORE = None
+_LIST_SEM_VALUE = None
+_DELETE_SEMAPHORE = None
+_DELETE_SEM_VALUE = None
+
+
+def _get_list_semaphore() -> asyncio.Semaphore:
+    value = max(1, int(get_config("asset.list_concurrent")))
+    global _LIST_SEMAPHORE, _LIST_SEM_VALUE
+    if _LIST_SEMAPHORE is None or value != _LIST_SEM_VALUE:
+        _LIST_SEM_VALUE = value
+        _LIST_SEMAPHORE = asyncio.Semaphore(value)
+    return _LIST_SEMAPHORE
+
+
+def _get_delete_semaphore() -> asyncio.Semaphore:
+    value = max(1, int(get_config("asset.delete_concurrent")))
+    global _DELETE_SEMAPHORE, _DELETE_SEM_VALUE
+    if _DELETE_SEMAPHORE is None or value != _DELETE_SEM_VALUE:
+        _DELETE_SEM_VALUE = value
+        _DELETE_SEMAPHORE = asyncio.Semaphore(value)
+    return _DELETE_SEMAPHORE
+
+
 class ListService(BaseAssetsService):
     """Assets list service."""
 
-    async def iter_assets(self, token: str):
+    async def list(self, token: str) -> Dict[str, List[str] | int]:
         params = {
             "pageSize": 50,
             "orderBy": "ORDER_BY_LAST_USE_TIME",
@@ -43,135 +66,61 @@ class ListService(BaseAssetsService):
         }
         page_token = None
         seen_tokens = set()
+        asset_ids: List[str] = []
+        session = await self._get_session()
+        while True:
+            if page_token:
+                if page_token in seen_tokens:
+                    logger.warning("Pagination stopped: repeated page token")
+                    break
+                seen_tokens.add(page_token)
+                params["pageToken"] = page_token
+            else:
+                params.pop("pageToken", None)
 
-        async with AsyncSession() as session:
-            while True:
-                if page_token:
-                    if page_token in seen_tokens:
-                        logger.warning("Pagination stopped: repeated page token")
-                        break
-                    seen_tokens.add(page_token)
-                    params["pageToken"] = page_token
-                else:
-                    params.pop("pageToken", None)
-
+            async with _get_list_semaphore():
                 response = await AssetsListReverse.request(
                     session,
                     token,
                     params,
                 )
 
-                result = response.json()
-                page_assets = result.get("assets", [])
-                yield page_assets
+            result = response.json()
+            page_assets = result.get("assets", [])
+            if page_assets:
+                for asset in page_assets:
+                    asset_id = asset.get("assetId")
+                    if asset_id:
+                        asset_ids.append(asset_id)
 
-                page_token = result.get("nextPageToken")
-                if not page_token:
-                    break
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
 
-    async def list(self, token: str) -> List[Dict]:
-        assets = []
-        async for page_assets in self.iter_assets(token):
-            assets.extend(page_assets)
-        logger.info(f"List success: {len(assets)} files")
-        return assets
-
-    async def count(self, token: str) -> int:
-        total = 0
-        async for page_assets in self.iter_assets(token):
-            total += len(page_assets)
-        logger.debug(f"Asset count: {total}")
-        return total
-
-
-class DeleteService(BaseAssetsService):
-    """Assets delete service."""
-
-    async def delete(self, token: str, asset_id: str) -> bool:
-        async with _get_assets_semaphore():
-            session = await self._get_session()
-            await AssetsDeleteReverse.request(
-                session,
-                token,
-                asset_id,
-            )
-
-            logger.debug(f"Deleted: {asset_id}")
-            return True
-
-    async def delete_all(self, token: str) -> Dict[str, int]:
-        total = success = failed = 0
-        list_service = ListService()
-
-        try:
-            async for assets in list_service.iter_assets(token):
-                if not assets:
-                    continue
-
-                total += len(assets)
-                batch_result = await self._delete_batch(token, assets)
-                success += batch_result["success"]
-                failed += batch_result["failed"]
-
-            if total == 0:
-                logger.info("No assets to delete")
-                return {"total": 0, "success": 0, "failed": 0, "skipped": True}
-        finally:
-            await list_service.close()
-
-        logger.info(f"Delete all: total={total}, success={success}, failed={failed}")
-        return {"total": total, "success": success, "failed": failed}
-
-    async def _delete_batch(self, token: str, assets: List[Dict]) -> Dict[str, int]:
-        batch_size = max(1, int(get_config("performance.assets_delete_batch_size")))
-        success = failed = 0
-
-        for i in range(0, len(assets), batch_size):
-            batch = assets[i : i + batch_size]
-            results = await asyncio.gather(
-                *[
-                    self._delete_one(token, asset, idx)
-                    for idx, asset in enumerate(batch)
-                ],
-                return_exceptions=True,
-            )
-            success += sum(1 for r in results if r is True)
-            failed += sum(1 for r in results if r is not True)
-
-        return {"success": success, "failed": failed}
-
-    async def _delete_one(self, token: str, asset: Dict, index: int) -> bool:
-        await asyncio.sleep(0.01 * index)
-        asset_id = asset.get("assetId", "")
-        if not asset_id:
-            return False
-        try:
-            return await self.delete(token, asset_id)
-        except Exception:
-            return False
-
-
-class BatchAssetsService:
-    """Batch assets orchestration."""
+        logger.info(f"List success: {len(asset_ids)} files")
+        return {"asset_ids": asset_ids, "count": len(asset_ids)}
 
     @staticmethod
-    async def fetch_details(
+    async def fetch_assets_details(
         tokens: list[str],
-        account_map: Dict[str, Dict[str, Any]],
+        account_map: dict,
         *,
         max_concurrent: int,
         batch_size: int,
         include_ok: bool = False,
-        on_item: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None,
-        should_cancel: Optional[Callable[[], bool]] = None,
-    ) -> Dict[str, Dict[str, Any]]:
+        on_item=None,
+        should_cancel=None,
+    ) -> dict:
+        """Batch fetch assets details for tokens."""
         account_map = account_map or {}
+        shared_service = ListService()
 
         async def _fetch_detail(token: str):
             account = account_map.get(token)
-            list_service = ListService()
             try:
-                count = await list_service.count(token)
+                result = await shared_service.list(token)
+                asset_ids = result.get("asset_ids", [])
+                count = result.get("count", len(asset_ids))
                 detail = {
                     "token": token,
                     "token_masked": account["token_masked"] if account else token,
@@ -197,34 +146,68 @@ class BatchAssetsService:
                 if include_ok:
                     return {"ok": False, "detail": detail, "count": 0}
                 return {"detail": detail, "count": 0}
-            finally:
-                await list_service.close()
 
-        return await run_in_batches(
-            tokens,
-            _fetch_detail,
-            max_concurrent=max_concurrent,
-            batch_size=batch_size,
-            on_item=on_item,
-            should_cancel=should_cancel,
-        )
+        try:
+            return await run_in_batches(
+                tokens,
+                _fetch_detail,
+                max_concurrent=max_concurrent,
+                batch_size=batch_size,
+                on_item=on_item,
+                should_cancel=should_cancel,
+            )
+        finally:
+            await shared_service.close()
+
+
+class DeleteService(BaseAssetsService):
+    """Assets delete service."""
+
+    async def delete(self, token: str, asset_ids: List[str]) -> Dict[str, int]:
+        if not asset_ids:
+            logger.info("No assets to delete")
+            return {"total": 0, "success": 0, "failed": 0, "skipped": True}
+
+        total = len(asset_ids)
+        success = 0
+        failed = 0
+        session = await self._get_session()
+
+        async def _delete_one(asset_id: str):
+            async with _get_delete_semaphore():
+                await AssetsDeleteReverse.request(session, token, asset_id)
+
+        tasks = [_delete_one(asset_id) for asset_id in asset_ids if asset_id]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for res in results:
+            if isinstance(res, Exception):
+                failed += 1
+            else:
+                success += 1
+
+        logger.info(f"Delete all: total={total}, success={success}, failed={failed}")
+        return {"total": total, "success": success, "failed": failed}
 
     @staticmethod
-    async def clear_online(
+    async def clear_assets(
         tokens: list[str],
         mgr,
         *,
         max_concurrent: int,
         batch_size: int,
         include_ok: bool = False,
-        on_item: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None,
-        should_cancel: Optional[Callable[[], bool]] = None,
-    ) -> Dict[str, Dict[str, Any]]:
+        on_item=None,
+        should_cancel=None,
+    ) -> dict:
+        """Batch clear assets for tokens."""
         delete_service = DeleteService()
+        list_service = ListService()
 
         async def _clear_one(token: str):
             try:
-                result = await delete_service.delete_all(token)
+                result = await list_service.list(token)
+                asset_ids = result.get("asset_ids", [])
+                result = await delete_service.delete(token, asset_ids)
                 await mgr.mark_asset_clear(token)
                 if include_ok:
                     return {"ok": True, "result": result}
@@ -245,6 +228,7 @@ class BatchAssetsService:
             )
         finally:
             await delete_service.close()
+            await list_service.close()
 
 
-__all__ = ["BatchAssetsService"]
+__all__ = ["ListService", "DeleteService"]

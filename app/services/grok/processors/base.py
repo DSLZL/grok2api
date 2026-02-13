@@ -11,8 +11,6 @@ from app.core.logger import logger
 from app.services.grok.utils.download import DownloadService
 
 
-ASSET_URL = "https://assets.grok.com/"
-
 T = TypeVar("T")
 
 
@@ -134,20 +132,8 @@ class BaseProcessor:
 
     async def process_url(self, path: str, media_type: str = "image") -> str:
         """处理资产 URL"""
-        if path.startswith("http"):
-            from urllib.parse import urlparse
-
-            path = urlparse(path).path
-
-        if not path.startswith("/"):
-            path = f"/{path}"
-
-        if self.app_url:
-            dl_service = self._get_dl()
-            await dl_service.download_file(path, self.token, media_type)
-            return f"{self.app_url.rstrip('/')}/v1/files/{media_type}{path}"
-        else:
-            return f"{ASSET_URL.rstrip('/')}{path}"
+        dl_service = self._get_dl()
+        return await dl_service.resolve_url(path, self.token, media_type)
 
 
 __all__ = [

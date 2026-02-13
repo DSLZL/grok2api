@@ -13,12 +13,18 @@ const NUMERIC_FIELDS = new Set([
   'fail_threshold',
   'limit_mb',
   'save_delay_ms',
-  'assets_max_concurrent',
+  'upload_concurrent',
+  'upload_timeout',
+  'download_concurrent',
+  'download_timeout',
+  'list_concurrent',
+  'list_timeout',
+  'list_batch_size',
+  'delete_concurrent',
+  'delete_timeout',
+  'delete_batch_size',
   'media_max_concurrent',
   'usage_max_concurrent',
-  'assets_delete_batch_size',
-  'assets_batch_size',
-  'assets_max_tokens',
   'usage_batch_size',
   'usage_max_tokens',
   'reload_interval_sec',
@@ -98,6 +104,19 @@ const LOCALE_MAP = {
     "enable_auto_clean": { title: "自动清理", desc: "是否启用缓存自动清理，开启后按上限自动回收。" },
     "limit_mb": { title: "清理阈值", desc: "缓存大小阈值（MB），超过阈值会触发清理。" }
   },
+  "asset": {
+    "label": "资产配置",
+    "upload_concurrent": { title: "上传并发", desc: "上传接口的最大并发数。推荐 30。" },
+    "upload_timeout": { title: "上传超时", desc: "上传接口超时时间（秒）。推荐 60。" },
+    "download_concurrent": { title: "下载并发", desc: "下载接口的最大并发数。推荐 30。" },
+    "download_timeout": { title: "下载超时", desc: "下载接口超时时间（秒）。推荐 60。" },
+    "list_concurrent": { title: "查询并发", desc: "资产查询接口的最大并发数。推荐 10。" },
+    "list_timeout": { title: "查询超时", desc: "资产查询接口超时时间（秒）。推荐 60。" },
+    "list_batch_size": { title: "查询批次大小", desc: "单次查询可处理的 Token 数量。推荐 10。" },
+    "delete_concurrent": { title: "删除并发", desc: "资产删除接口的最大并发数。推荐 10。" },
+    "delete_timeout": { title: "删除超时", desc: "资产删除接口超时时间（秒）。推荐 60。" },
+    "delete_batch_size": { title: "删除批次大小", desc: "单次删除可处理的 Token 数量。推荐 10。" }
+  },
   "performance": {
     "label": "并发性能",
     "media_max_concurrent": { title: "Media 并发上限", desc: "视频/媒体生成请求的并发上限。推荐 50。" },
@@ -106,11 +125,7 @@ const LOCALE_MAP = {
     "nsfw_max_tokens": { title: "NSFW 开启最大数量", desc: "单次批量开启 NSFW 的 Token 数量上限，防止误操作。推荐 1000。" },
     "usage_max_concurrent": { title: "Token 刷新并发上限", desc: "批量刷新 Token 用量时的并发请求上限。推荐 25。" },
     "usage_batch_size": { title: "Token 刷新批次大小", desc: "批量刷新 Token 用量的单批处理数量。推荐 50。" },
-    "usage_max_tokens": { title: "Token 刷新最大数量", desc: "单次批量刷新 Token 用量时的处理数量上限。推荐 1000。" },
-    "assets_max_concurrent": { title: "Assets 处理并发上限", desc: "批量查找/删除资产时的并发请求上限。推荐 25。" },
-    "assets_batch_size": { title: "Assets 处理批次大小", desc: "批量查找/删除资产时的单批处理数量。推荐 10。" },
-    "assets_max_tokens": { title: "Assets 处理最大数量", desc: "单次批量查找/删除资产时的处理数量上限。推荐 1000。" },
-    "assets_delete_batch_size": { title: "Assets 单账号删除批量大小", desc: "单账号批量删除资产时的单批并发数量。推荐 10。" }
+    "usage_max_tokens": { title: "Token 刷新最大数量", desc: "单次批量刷新 Token 用量时的处理数量上限。推荐 1000。" }
   }
 };
 

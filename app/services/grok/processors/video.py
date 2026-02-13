@@ -29,7 +29,6 @@ class VideoStreamProcessor(BaseProcessor):
         self.response_id: Optional[str] = None
         self.think_opened: bool = False
         self.role_sent: bool = False
-        self.video_format = str(get_config("app.video_format")).lower()
 
         if think is None:
             self.show_think = get_config("chat.thinking")
@@ -55,17 +54,6 @@ class VideoStreamProcessor(BaseProcessor):
             ],
         }
         return f"data: {orjson.dumps(chunk).decode()}\n\n"
-
-    def _build_video_html(self, video_url: str, thumbnail_url: str = "") -> str:
-        """Build video HTML tag."""
-        import html
-
-        safe_video_url = html.escape(video_url)
-        safe_thumbnail_url = html.escape(thumbnail_url)
-        poster_attr = f' poster="{safe_thumbnail_url}"' if safe_thumbnail_url else ""
-        return f'''<video id="video" controls="" preload="none"{poster_attr}>
-  <source id="mp4" src="{safe_video_url}" type="video/mp4">
-</video>'''
 
     async def process(
         self, response: AsyncIterable[bytes]
@@ -111,20 +99,11 @@ class VideoStreamProcessor(BaseProcessor):
                             self.think_opened = False
 
                         if video_url:
-                            final_video_url = await self.process_url(video_url, "video")
-                            final_thumbnail_url = ""
-                            if thumbnail_url:
-                                final_thumbnail_url = await self.process_url(
-                                    thumbnail_url, "image"
-                                )
-
-                            if self.video_format == "url":
-                                yield self._sse(final_video_url)
-                            else:
-                                video_html = self._build_video_html(
-                                    final_video_url, final_thumbnail_url
-                                )
-                                yield self._sse(video_html)
+                            dl_service = self._get_dl()
+                            rendered = await dl_service.render_video(
+                                video_url, self.token, thumbnail_url
+                            )
+                            yield self._sse(rendered)
 
                             logger.info(f"Video generated: {video_url}")
                     continue
@@ -179,13 +158,6 @@ class VideoCollectProcessor(BaseProcessor):
 
     def __init__(self, model: str, token: str = ""):
         super().__init__(model, token)
-        self.video_format = str(get_config("app.video_format")).lower()
-
-    def _build_video_html(self, video_url: str, thumbnail_url: str = "") -> str:
-        poster_attr = f' poster="{thumbnail_url}"' if thumbnail_url else ""
-        return f'''<video id="video" controls="" preload="none"{poster_attr}>
-  <source id="mp4" src="{video_url}" type="video/mp4">
-</video>'''
 
     async def process(self, response: AsyncIterable[bytes]) -> dict[str, Any]:
         """Process and collect video response."""
@@ -212,19 +184,10 @@ class VideoCollectProcessor(BaseProcessor):
                         thumbnail_url = video_resp.get("thumbnailImageUrl", "")
 
                         if video_url:
-                            final_video_url = await self.process_url(video_url, "video")
-                            final_thumbnail_url = ""
-                            if thumbnail_url:
-                                final_thumbnail_url = await self.process_url(
-                                    thumbnail_url, "image"
-                                )
-
-                            if self.video_format == "url":
-                                content = final_video_url
-                            else:
-                                content = self._build_video_html(
-                                    final_video_url, final_thumbnail_url
-                                )
+                            dl_service = self._get_dl()
+                            content = await dl_service.render_video(
+                                video_url, self.token, thumbnail_url
+                            )
                             logger.info(f"Video generated: {video_url}")
 
         except asyncio.CancelledError:

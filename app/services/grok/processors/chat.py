@@ -33,7 +33,6 @@ class StreamProcessor(BaseProcessor):
         self.think_opened: bool = False
         self.role_sent: bool = False
         self.filter_tags = get_config("chat.filter_tags")
-        self.image_format = get_config("app.image_format")
         self._tag_buffer: str = ""
         self._in_filter_tag: bool = False
 
@@ -164,27 +163,11 @@ class StreamProcessor(BaseProcessor):
                     for url in _collect_image_urls(mr):
                         parts = url.split("/")
                         img_id = parts[-2] if len(parts) >= 2 else "image"
-
-                        if self.image_format == "base64":
-                            try:
-                                dl_service = self._get_dl()
-                                base64_data = await dl_service.parse_b64(
-                                    url, self.token, "image"
-                                )
-                                if base64_data:
-                                    yield self._sse(f"![{img_id}]({base64_data})\n")
-                                else:
-                                    final_url = await self.process_url(url, "image")
-                                    yield self._sse(f"![{img_id}]({final_url})\n")
-                            except Exception as e:
-                                logger.warning(
-                                    f"Failed to convert image to base64, falling back to URL: {e}"
-                                )
-                                final_url = await self.process_url(url, "image")
-                                yield self._sse(f"![{img_id}]({final_url})\n")
-                        else:
-                            final_url = await self.process_url(url, "image")
-                            yield self._sse(f"![{img_id}]({final_url})\n")
+                        dl_service = self._get_dl()
+                        rendered = await dl_service.render_image(
+                            url, self.token, img_id
+                        )
+                        yield self._sse(f"{rendered}\n")
 
                     if (
                         (meta := mr.get("metadata", {}))
@@ -246,7 +229,6 @@ class CollectProcessor(BaseProcessor):
 
     def __init__(self, model: str, token: str = ""):
         super().__init__(model, token)
-        self.image_format = get_config("app.image_format")
         self.filter_tags = get_config("chat.filter_tags")
 
     def _filter_content(self, content: str) -> str:
@@ -292,27 +274,11 @@ class CollectProcessor(BaseProcessor):
                         for url in urls:
                             parts = url.split("/")
                             img_id = parts[-2] if len(parts) >= 2 else "image"
-
-                            if self.image_format == "base64":
-                                try:
-                                    dl_service = self._get_dl()
-                                    base64_data = await dl_service.parse_b64(
-                                        url, self.token, "image"
-                                    )
-                                    if base64_data:
-                                        content += f"![{img_id}]({base64_data})\n"
-                                    else:
-                                        final_url = await self.process_url(url, "image")
-                                        content += f"![{img_id}]({final_url})\n"
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Failed to convert image to base64, falling back to URL: {e}"
-                                    )
-                                    final_url = await self.process_url(url, "image")
-                                    content += f"![{img_id}]({final_url})\n"
-                            else:
-                                final_url = await self.process_url(url, "image")
-                                content += f"![{img_id}]({final_url})\n"
+                            dl_service = self._get_dl()
+                            rendered = await dl_service.render_image(
+                                url, self.token, img_id
+                            )
+                            content += f"{rendered}\n"
 
                     if (
                         (meta := mr.get("metadata", {}))

@@ -16,11 +16,8 @@ from app.core.batch_tasks import create_task, get_task, expire_task
 from app.core.storage import get_storage, LocalStorage, RedisStorage, SQLStorage
 from app.core.exceptions import AppException
 from app.services.token.manager import get_token_manager
-from app.services.grok.batch_services import (
-    BatchUsageService,
-    BatchNSFWService,
-    BatchAssetsService,
-)
+from app.services.grok.batch_services import BatchUsageService, BatchNSFWService
+from app.services.grok.batch_services.assets import ListService, DeleteService
 import os
 import time
 import uuid
@@ -128,6 +125,8 @@ def _truncate_tokens(
         )
 
     return unique_tokens, truncated, original_count
+
+
 
 
 def _mask_token(token: str) -> str:
@@ -1167,19 +1166,14 @@ async def get_cache_stats_api(request: Request):
         }
         online_details = []
         account_map = {a["token"]: a for a in accounts}
-        max_concurrent = max(1, int(get_config("performance.assets_max_concurrent")))
-        batch_size = max(1, int(get_config("performance.assets_batch_size")))
-        max_tokens = int(get_config("performance.assets_max_tokens"))
-
+        batch_size = max(1, int(get_config("asset.list_batch_size")))
+        max_concurrent = batch_size
         truncated = False
         original_count = 0
 
         if selected_tokens:
-            selected_tokens, truncated, original_count = _truncate_tokens(
-                selected_tokens, max_tokens, "Assets fetch"
-            )
             total = 0
-            raw_results = await BatchAssetsService.fetch_details(
+            raw_results = await ListService.fetch_assets_details(
                 selected_tokens,
                 account_map,
                 max_concurrent=max_concurrent,
@@ -1214,10 +1208,7 @@ async def get_cache_stats_api(request: Request):
             total = 0
             tokens = list(dict.fromkeys([account["token"] for account in accounts]))
             original_count = len(tokens)
-            if len(tokens) > max_tokens:
-                tokens = tokens[:max_tokens]
-                truncated = True
-            raw_results = await BatchAssetsService.fetch_details(
+            raw_results = await ListService.fetch_assets_details(
                 tokens,
                 account_map,
                 max_concurrent=max_concurrent,
@@ -1250,7 +1241,7 @@ async def get_cache_stats_api(request: Request):
         else:
             token = selected_token
             if token:
-                raw_results = await BatchAssetsService.fetch_details(
+                raw_results = await ListService.fetch_assets_details(
                     [token],
                     account_map,
                     max_concurrent=1,
@@ -1349,13 +1340,11 @@ async def load_online_cache_api_async(data: dict):
     else:
         raise HTTPException(status_code=400, detail="No tokens provided")
 
-    max_tokens = int(get_config("performance.assets_max_tokens"))
-    selected_tokens, truncated, original_count = _truncate_tokens(
-        selected_tokens, max_tokens, "Assets load"
-    )
+    truncated = False
+    original_count = len(selected_tokens)
 
-    max_concurrent = get_config("performance.assets_max_concurrent")
-    batch_size = get_config("performance.assets_batch_size")
+    batch_size = get_config("asset.list_batch_size")
+    max_concurrent = batch_size
 
     task = create_task(len(selected_tokens))
 
@@ -1369,7 +1358,7 @@ async def load_online_cache_api_async(data: dict):
                 ok = bool(res.get("data", {}).get("ok"))
                 task.record(ok)
 
-            raw_results = await BatchAssetsService.fetch_details(
+            raw_results = await ListService.fetch_assets_details(
                 selected_tokens,
                 account_map,
                 max_concurrent=max_concurrent,
@@ -1496,18 +1485,14 @@ async def clear_online_cache_api(data: dict):
             token_list = list(dict.fromkeys(token_list))
 
             # 最大数量限制
-            max_tokens = int(get_config("performance.assets_max_tokens"))
-            token_list, truncated, original_count = _truncate_tokens(
-                token_list, max_tokens, "Clear online cache"
-            )
+            truncated = False
+            original_count = len(token_list)
 
             results = {}
-            max_concurrent = max(
-                1, int(get_config("performance.assets_max_concurrent"))
-            )
-            batch_size = max(1, int(get_config("performance.assets_batch_size")))
+            batch_size = max(1, int(get_config("asset.delete_batch_size")))
+            max_concurrent = batch_size
 
-            raw_results = await BatchAssetsService.clear_online(
+            raw_results = await DeleteService.clear_assets(
                 token_list,
                 mgr,
                 max_concurrent=max_concurrent,
@@ -1532,7 +1517,7 @@ async def clear_online_cache_api(data: dict):
                 status_code=400, detail="No available token to perform cleanup"
             )
 
-        raw_results = await BatchAssetsService.clear_online(
+        raw_results = await DeleteService.clear_assets(
             [token],
             mgr,
             max_concurrent=1,
@@ -1563,13 +1548,11 @@ async def clear_online_cache_api_async(data: dict):
     if not token_list:
         raise HTTPException(status_code=400, detail="No tokens provided")
 
-    max_tokens = int(get_config("performance.assets_max_tokens"))
-    token_list, truncated, original_count = _truncate_tokens(
-        token_list, max_tokens, "Clear online cache async"
-    )
+    truncated = False
+    original_count = len(token_list)
 
-    max_concurrent = get_config("performance.assets_max_concurrent")
-    batch_size = get_config("performance.assets_batch_size")
+    batch_size = get_config("asset.delete_batch_size")
+    max_concurrent = batch_size
 
     task = create_task(len(token_list))
 
@@ -1579,7 +1562,7 @@ async def clear_online_cache_api_async(data: dict):
                 ok = bool(res.get("data", {}).get("ok"))
                 task.record(ok)
 
-            raw_results = await BatchAssetsService.clear_online(
+            raw_results = await DeleteService.clear_assets(
                 token_list,
                 mgr,
                 max_concurrent=max_concurrent,

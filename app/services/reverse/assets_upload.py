@@ -57,7 +57,7 @@ class AssetsUploadReverse:
             }
 
             # Curl Config
-            timeout = get_config("network.timeout")
+            timeout = get_config("asset.upload_timeout")
             browser = get_config("security.browser")
 
             async def _do_request():

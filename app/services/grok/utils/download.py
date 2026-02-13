@@ -1,5 +1,7 @@
 """
 Download service.
+
+Download service for assets.grok.com.
 """
 
 import asyncio
@@ -18,7 +20,7 @@ from app.core.storage import DATA_DIR
 from app.core.config import get_config
 from app.core.exceptions import AppException
 from app.services.reverse import AssetsDownloadReverse
-from app.services.grok.utils.locks import _get_assets_semaphore, _file_lock
+from app.services.grok.utils.locks import _get_download_semaphore, _file_lock
 
 
 class DownloadService:
@@ -45,72 +47,119 @@ class DownloadService:
             await self._session.close()
             self._session = None
 
-    @staticmethod
-    def _is_url(value: str) -> bool:
-        """Check if the value is a URL."""
+    async def resolve_url(
+        self, path_or_url: str, token: str, media_type: str = "image"
+    ) -> str:
+        asset_url = path_or_url
+        path = path_or_url
+        if path_or_url.startswith("http"):
+            parsed = urlparse(path_or_url)
+            path = parsed.path or ""
+            asset_url = path_or_url
+        else:
+            if not path_or_url.startswith("/"):
+                path_or_url = f"/{path_or_url}"
+            path = path_or_url
+            asset_url = f"https://assets.grok.com{path_or_url}"
+
+        app_url = get_config("app.app_url")
+        if app_url:
+            await self.download_file(asset_url, token, media_type)
+            return f"{app_url.rstrip('/')}/v1/files/{media_type}{path}"
+        return asset_url
+
+    async def render_image(
+        self, url: str, token: str, image_id: str = "image"
+    ) -> str:
+        fmt = get_config("app.image_format")
+        fmt = fmt.lower() if isinstance(fmt, str) else "url"
+        if fmt not in ("base64", "url", "markdown"):
+            fmt = "url"
         try:
-            parsed = urlparse(value)
-            return bool(parsed.scheme and parsed.netloc and parsed.scheme in ["http", "https"])
-        except Exception:
-            return False
+            if fmt == "base64":
+                data_uri = await self.parse_b64(url, token, "image")
+                return f"![{image_id}]({data_uri})"
+            final_url = await self.resolve_url(url, token, "image")
+            return f"![{image_id}]({final_url})"
+        except Exception as e:
+            logger.warning(f"Image render failed, fallback to URL: {e}")
+            final_url = await self.resolve_url(url, token, "image")
+            return f"![{image_id}]({final_url})"
+
+    async def render_video(
+        self, video_url: str, token: str, thumbnail_url: str = ""
+    ) -> str:
+        fmt = get_config("app.video_format")
+        fmt = fmt.lower() if isinstance(fmt, str) else "url"
+        if fmt not in ("url", "markdown", "html"):
+            fmt = "url"
+        final_video_url = await self.resolve_url(video_url, token, "video")
+        final_thumb_url = ""
+        if thumbnail_url:
+            final_thumb_url = await self.resolve_url(thumbnail_url, token, "image")
+        if fmt == "url":
+            return final_video_url
+        if fmt == "markdown":
+            return f"[video]({final_video_url})"
+        import html
+
+        safe_video_url = html.escape(final_video_url)
+        safe_thumbnail_url = html.escape(final_thumb_url)
+        poster_attr = f' poster="{safe_thumbnail_url}"' if safe_thumbnail_url else ""
+        return f'''<video id="video" controls="" preload="none"{poster_attr}>
+  <source id="mp4" src="{safe_video_url}" type="video/mp4">
+</video>'''
 
     async def parse_b64(self, file_path: str, token: str, media_type: str = "image") -> str:
         """Download and return data URI."""
         try:
-            cache_path, mime = await self.download_file(file_path, token, media_type)
-            if not cache_path or not cache_path.exists():
-                logger.warning(f"Download failed for {file_path}: invalid path")
-                raise AppException(
-                    "Download failed: invalid path", code="download_failed"
-                )
+            if not isinstance(file_path, str) or not file_path.strip():
+                raise AppException("Invalid file path", code="invalid_file_path")
+            if file_path.startswith("data:"):
+                raise AppException("Invalid file path", code="invalid_file_path")
+            if not self._is_url(file_path):
+                raise AppException("Invalid file path", code="invalid_file_path")
 
-            data_uri = await self.format_b64(cache_path, mime)
+            file_path = self._normalize_path(file_path)
+            lock_name = f"dl_b64_{hashlib.sha1(file_path.encode()).hexdigest()[:16]}"
+            lock_timeout = max(1, int(get_config("asset.download_timeout")))
+            async with _get_download_semaphore():
+                async with _file_lock(lock_name, timeout=lock_timeout):
+                    session = await self.create()
+                    response = await AssetsDownloadReverse.request(
+                        session, token, file_path
+                    )
 
-            if data_uri:
-                try:
-                    cache_path.unlink()
-                except Exception as e:
-                    logger.debug(f"Failed to cleanup temp file {cache_path}: {e}")
+            if hasattr(response, "aiter_content"):
+                data = bytearray()
+                async for chunk in response.aiter_content():
+                    if chunk:
+                        data.extend(chunk)
+                raw = bytes(data)
+            else:
+                raw = response.content
+
+            content_type = response.headers.get(
+                "content-type", "application/octet-stream"
+            ).split(";")[0]
+            data_uri = f"data:{content_type};base64,{base64.b64encode(raw).decode()}"
 
             return data_uri
         except Exception as e:
             logger.error(f"Failed to convert {file_path} to base64: {e}")
             raise
 
-    @staticmethod
-    async def format_b64(file_path: Path, mime_type: str) -> str:
-        """Format local file to data URI."""
-        try:
-            if not file_path.exists():
-                logger.warning(f"File not found for base64 conversion: {file_path}")
-                raise AppException(
-                    f"File not found: {file_path}", code="file_not_found"
-                )
-
-            if not file_path.is_file():
-                logger.warning(f"Path is not a file: {file_path}")
-                raise AppException(
-                    f"Invalid file path: {file_path}", code="invalid_file_path"
-                )
-
-            async with aiofiles.open(file_path, "rb") as f:
-                data = await f.read()
-            b64_data = base64.b64encode(data).decode()
-            return f"data:{mime_type};base64,{b64_data}"
-        except AppException:
-            raise
-        except Exception as e:
-            logger.error(f"File to base64 failed: {file_path} - {e}")
-            raise AppException(
-                f"Failed to read file: {file_path}", code="file_read_error"
-            )
-
-    def check_format(self, file_path: str) -> str:
+    def _normalize_path(self, file_path: str) -> str:
         """Normalize file path for download."""
         if not isinstance(file_path, str) or not file_path.strip():
             raise AppException("Invalid file path", code="invalid_file_path")
-        if self._is_url(file_path):
-            file_path = urlparse(file_path).path or ""
+        parsed = urlparse(file_path)
+        if not (parsed.scheme and parsed.netloc and parsed.scheme in ["http", "https"]):
+            raise AppException("Invalid file path", code="invalid_file_path")
+        path = parsed.path or ""
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+        file_path = path
         if not file_path.startswith("/"):
             file_path = f"/{file_path}"
         return file_path
@@ -126,8 +175,8 @@ class DownloadService:
         Returns:
             Tuple[Optional[Path], str]: The path of the downloaded file and the MIME type.
         """
-        async with _get_assets_semaphore():
-            file_path = self.check_format(file_path)
+        async with _get_download_semaphore():
+            file_path = self._normalize_path(file_path)
             cache_dir = self.image_dir if media_type == "image" else self.video_dir
             filename = file_path.lstrip("/").replace("/", "-")
             cache_path = cache_dir / filename
@@ -135,11 +184,10 @@ class DownloadService:
             lock_name = (
                 f"dl_{media_type}_{hashlib.sha1(str(cache_path).encode()).hexdigest()[:16]}"
             )
-            async with _file_lock(lock_name, timeout=10):
+            lock_timeout = max(1, int(get_config("asset.download_timeout")))
+            async with _file_lock(lock_name, timeout=lock_timeout):
                 session = await self.create()
-                response = await AssetsDownloadReverse.request(
-                    session, token, file_path
-                )
+                response = await AssetsDownloadReverse.request(session, token, file_path)
 
                 tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
                 try:
@@ -163,11 +211,11 @@ class DownloadService:
                 ).split(";")[0]
                 logger.info(f"Downloaded: {file_path}")
 
-                asyncio.create_task(self.check_limit())
+                asyncio.create_task(self._check_limit())
 
             return cache_path, mime
 
-    async def check_limit(self):
+    async def _check_limit(self):
         """Check cache limit and cleanup.
 
         Args:

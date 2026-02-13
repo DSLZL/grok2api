@@ -74,7 +74,7 @@ class AssetsDownloadReverse:
             headers["Upgrade-Insecure-Requests"] = "1"
 
             # Curl Config
-            timeout = get_config("network.timeout")
+            timeout = get_config("asset.download_timeout")
             browser = get_config("security.browser")
 
             async def _do_request():
