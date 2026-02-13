@@ -24,9 +24,6 @@ const NUMERIC_FIELDS = new Set([
   'delete_timeout',
   'delete_batch_size',
   'media_max_concurrent',
-  'usage_max_concurrent',
-  'usage_batch_size',
-  'usage_max_tokens',
   'reload_interval_sec',
   'stream_idle_timeout',
   'video_idle_timeout',
@@ -34,8 +31,7 @@ const NUMERIC_FIELDS = new Set([
   'image_ws_final_min_bytes',
   'image_ws_medium_min_bytes',
   'concurrent',
-  'batch_size',
-  'nsfw_max_tokens'
+  'batch_size'
 ]);
 
 const LOCALE_MAP = {
@@ -123,13 +119,15 @@ const LOCALE_MAP = {
     "batch_size": { title: "批次大小", desc: "批量开启 NSFW 模式的单批处理数量。推荐 50。" },
     "timeout": { title: "请求超时", desc: "NSFW 开启相关请求的超时时间（秒）。推荐 60。" }
   },
+  "usage": {
+    "label": "Usage 配置",
+    "concurrent": { title: "并发上限", desc: "批量刷新用量时的并发请求上限。推荐 10。" },
+    "batch_size": { title: "批次大小", desc: "批量刷新用量的单批处理数量。推荐 50。" },
+    "timeout": { title: "请求超时", desc: "用量查询接口的超时时间（秒）。推荐 60。" }
+  },
   "performance": {
     "label": "并发性能",
-    "media_max_concurrent": { title: "Media 并发上限", desc: "视频/媒体生成请求的并发上限。推荐 50。" },
-    "nsfw_max_tokens": { title: "NSFW 开启最大数量", desc: "单次批量开启 NSFW 的 Token 数量上限，防止误操作。推荐 1000。" },
-    "usage_max_concurrent": { title: "Token 刷新并发上限", desc: "批量刷新 Token 用量时的并发请求上限。推荐 25。" },
-    "usage_batch_size": { title: "Token 刷新批次大小", desc: "批量刷新 Token 用量的单批处理数量。推荐 50。" },
-    "usage_max_tokens": { title: "Token 刷新最大数量", desc: "单次批量刷新 Token 用量时的处理数量上限。推荐 1000。" }
+    "media_max_concurrent": { title: "Media 并发上限", desc: "视频/媒体生成请求的并发上限。推荐 50。" }
   }
 };
 

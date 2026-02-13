@@ -1,5 +1,5 @@
 """Batch services."""
 
-from .usage import BatchUsageService
+from .usage import UsageService
 
-__all__ = ["BatchUsageService"]
+__all__ = ["UsageService"]

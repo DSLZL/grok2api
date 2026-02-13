@@ -71,12 +71,13 @@ concurrent = 10
 batch_size = 50
 timeout = 60
 
+[usage]
+concurrent = 10
+batch_size = 50
+timeout = 60
+
 [performance]
 media_max_concurrent = 50
-usage_max_concurrent = 25
-usage_batch_size = 50
-usage_max_tokens = 1000
-nsfw_max_tokens = 1000
 assets_max_concurrent = 25
 assets_delete_batch_size = 10
 assets_batch_size = 10

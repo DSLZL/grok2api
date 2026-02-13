@@ -16,7 +16,7 @@ from app.core.batch_tasks import create_task, get_task, expire_task
 from app.core.storage import get_storage, LocalStorage, RedisStorage, SQLStorage
 from app.core.exceptions import AppException
 from app.services.token.manager import get_token_manager
-from app.services.grok.batch_services import BatchUsageService
+from app.services.grok.batch_services.usage import UsageService
 from app.services.grok.batch_services.nsfw import NSFWService
 from app.services.grok.batch_services.assets import ListService, DeleteService
 import os
@@ -110,22 +110,9 @@ def _collect_tokens(data: dict) -> List[str]:
     return tokens
 
 
-def _truncate_tokens(
-    tokens: List[str], max_tokens: int, operation: str = "operation"
-) -> Tuple[List[str], bool, int]:
-    """去重并截断 token 列表，返回 (unique_tokens, truncated, original_count)"""
-    unique_tokens = list(dict.fromkeys(tokens))
-    original_count = len(unique_tokens)
-    truncated = False
-
-    if len(unique_tokens) > max_tokens:
-        unique_tokens = unique_tokens[:max_tokens]
-        truncated = True
-        logger.warning(
-            f"{operation}: truncated from {original_count} to {max_tokens} tokens"
-        )
-
-    return unique_tokens, truncated, original_count
+def _dedupe_tokens(tokens: List[str]) -> List[str]:
+    """去重 token 列表（保持原顺序）"""
+    return list(dict.fromkeys(tokens))
 
 
 
@@ -826,17 +813,14 @@ async def refresh_tokens_api(data: dict):
         if not tokens:
             raise HTTPException(status_code=400, detail="No tokens provided")
 
-        # 去重并截断
-        max_tokens = int(get_config("performance.usage_max_tokens"))
-        unique_tokens, truncated, original_count = _truncate_tokens(
-            tokens, max_tokens, "Usage refresh"
-        )
+        # 去重
+        unique_tokens = _dedupe_tokens(tokens)
 
         # 批量执行配置
-        max_concurrent = get_config("performance.usage_max_concurrent")
-        batch_size = get_config("performance.usage_batch_size")
+        max_concurrent = get_config("usage.concurrent")
+        batch_size = get_config("usage.batch_size")
 
-        raw_results = await BatchUsageService.refresh(
+        raw_results = await UsageService.batch(
             unique_tokens,
             mgr,
             max_concurrent=max_concurrent,
@@ -851,10 +835,6 @@ async def refresh_tokens_api(data: dict):
                 results[token] = False
 
         response = {"status": "success", "results": results}
-        if truncated:
-            response["warning"] = (
-                f"数量超出限制，仅处理前 {max_tokens} 个（共 {original_count} 个）"
-            )
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -871,14 +851,11 @@ async def refresh_tokens_api_async(data: dict):
     if not tokens:
         raise HTTPException(status_code=400, detail="No tokens provided")
 
-    # 去重并截断
-    max_tokens = int(get_config("performance.usage_max_tokens"))
-    unique_tokens, truncated, original_count = _truncate_tokens(
-        tokens, max_tokens, "Usage refresh"
-    )
+    # 去重
+    unique_tokens = _dedupe_tokens(tokens)
 
-    max_concurrent = get_config("performance.usage_max_concurrent")
-    batch_size = get_config("performance.usage_batch_size")
+    max_concurrent = get_config("usage.concurrent")
+    batch_size = get_config("usage.batch_size")
 
     task = create_task(len(unique_tokens))
 
@@ -888,7 +865,7 @@ async def refresh_tokens_api_async(data: dict):
             async def _on_item(item: str, res: dict):
                 task.record(bool(res.get("ok")))
 
-            raw_results = await BatchUsageService.refresh(
+            raw_results = await UsageService.batch(
                 unique_tokens,
                 mgr,
                 max_concurrent=max_concurrent,
@@ -923,12 +900,7 @@ async def refresh_tokens_api_async(data: dict):
                 },
                 "results": results,
             }
-            warning = None
-            if truncated:
-                warning = (
-                    f"数量超出限制，仅处理前 {max_tokens} 个（共 {original_count} 个）"
-                )
-            task.finish(result, warning=warning)
+            task.finish(result)
         except Exception as e:
             task.fail_task(str(e))
         finally:
@@ -964,11 +936,8 @@ async def enable_nsfw_api(data: dict):
         if not tokens:
             raise HTTPException(status_code=400, detail="No tokens available")
 
-        # 去重并截断
-        max_tokens = int(get_config("performance.nsfw_max_tokens"))
-        unique_tokens, truncated, original_count = _truncate_tokens(
-            tokens, max_tokens, "NSFW enable"
-        )
+        # 去重
+        unique_tokens = _dedupe_tokens(tokens)
 
         # 批量执行配置
         max_concurrent = get_config("nsfw.concurrent")
@@ -1006,11 +975,6 @@ async def enable_nsfw_api(data: dict):
         }
 
         # 添加截断提示
-        if truncated:
-            response["warning"] = (
-                f"数量超出限制，仅处理前 {max_tokens} 个（共 {original_count} 个）"
-            )
-
         return response
 
     except HTTPException:
@@ -1038,11 +1002,8 @@ async def enable_nsfw_api_async(data: dict):
     if not tokens:
         raise HTTPException(status_code=400, detail="No tokens available")
 
-    # 去重并截断
-    max_tokens = int(get_config("performance.nsfw_max_tokens"))
-    unique_tokens, truncated, original_count = _truncate_tokens(
-        tokens, max_tokens, "NSFW enable"
-    )
+    # 去重
+    unique_tokens = _dedupe_tokens(tokens)
 
     max_concurrent = get_config("nsfw.concurrent")
     batch_size = get_config("nsfw.batch_size")
@@ -1092,12 +1053,7 @@ async def enable_nsfw_api_async(data: dict):
                 },
                 "results": results,
             }
-            warning = None
-            if truncated:
-                warning = (
-                    f"数量超出限制，仅处理前 {max_tokens} 个（共 {original_count} 个）"
-                )
-            task.finish(result, warning=warning)
+            task.finish(result)
         except Exception as e:
             task.fail_task(str(e))
         finally:
@@ -1169,9 +1125,6 @@ async def get_cache_stats_api(request: Request):
         account_map = {a["token"]: a for a in accounts}
         batch_size = max(1, int(get_config("asset.list_batch_size")))
         max_concurrent = batch_size
-        truncated = False
-        original_count = 0
-
         if selected_tokens:
             total = 0
             raw_results = await ListService.fetch_assets_details(
@@ -1208,7 +1161,6 @@ async def get_cache_stats_api(request: Request):
         elif scope == "all":
             total = 0
             tokens = list(dict.fromkeys([account["token"] for account in accounts]))
-            original_count = len(tokens)
             raw_results = await ListService.fetch_assets_details(
                 tokens,
                 account_map,
@@ -1286,10 +1238,6 @@ async def get_cache_stats_api(request: Request):
             "online_scope": scope or "none",
             "online_details": online_details,
         }
-        if truncated:
-            response["warning"] = (
-                f"数量超出限制，仅处理前 {max_tokens} 个（共 {original_count} 个）"
-            )
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1340,9 +1288,6 @@ async def load_online_cache_api_async(data: dict):
         scope = "selected"
     else:
         raise HTTPException(status_code=400, detail="No tokens provided")
-
-    truncated = False
-    original_count = len(selected_tokens)
 
     batch_size = get_config("asset.list_batch_size")
     max_concurrent = batch_size
@@ -1397,12 +1342,7 @@ async def load_online_cache_api_async(data: dict):
                 "online_scope": scope or "none",
                 "online_details": online_details,
             }
-            warning = None
-            if truncated:
-                warning = (
-                    f"数量超出限制，仅处理前 {max_tokens} 个（共 {original_count} 个）"
-                )
-            task.finish(result, warning=warning)
+            task.finish(result)
         except Exception as e:
             task.fail_task(str(e))
         finally:
@@ -1485,10 +1425,6 @@ async def clear_online_cache_api(data: dict):
             # 去重并保持顺序
             token_list = list(dict.fromkeys(token_list))
 
-            # 最大数量限制
-            truncated = False
-            original_count = len(token_list)
-
             results = {}
             batch_size = max(1, int(get_config("asset.delete_batch_size")))
             max_concurrent = batch_size
@@ -1505,12 +1441,7 @@ async def clear_online_cache_api(data: dict):
                 else:
                     results[token] = {"status": "error", "error": res.get("error")}
 
-            response = {"status": "success", "results": results}
-            if truncated:
-                response["warning"] = (
-                    f"数量超出限制，仅处理前 {max_tokens} 个（共 {original_count} 个）"
-                )
-            return response
+            return {"status": "success", "results": results}
 
         token = data.get("token") or mgr.get_token()
         if not token:
@@ -1548,9 +1479,6 @@ async def clear_online_cache_api_async(data: dict):
     token_list = [t.strip() for t in tokens if isinstance(t, str) and t.strip()]
     if not token_list:
         raise HTTPException(status_code=400, detail="No tokens provided")
-
-    truncated = False
-    original_count = len(token_list)
 
     batch_size = get_config("asset.delete_batch_size")
     max_concurrent = batch_size
@@ -1598,12 +1526,7 @@ async def clear_online_cache_api_async(data: dict):
                 },
                 "results": results,
             }
-            warning = None
-            if truncated:
-                warning = (
-                    f"数量超出限制，仅处理前 {max_tokens} 个（共 {original_count} 个）"
-                )
-            task.finish(result, warning=warning)
+            task.finish(result)
         except Exception as e:
             task.fail_task(str(e))
         finally:

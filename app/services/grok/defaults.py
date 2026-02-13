@@ -79,12 +79,13 @@ GROK_DEFAULTS = {
         "batch_size": 50,
         "timeout": 60,
     },
+    "usage": {
+        "concurrent": 10,
+        "batch_size": 50,
+        "timeout": 60,
+    },
     "performance": {
         "media_max_concurrent": 50,
-        "usage_max_concurrent": 25,
-        "usage_batch_size": 50,
-        "usage_max_tokens": 1000,
-        "nsfw_max_tokens": 1000,
     },
 }
 

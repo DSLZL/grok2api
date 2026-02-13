@@ -134,12 +134,20 @@ delete_batch_size = 10
 
 # ==================== NSFW ====================
 [nsfw]
-
 # NSFW 批量开启并发上限
 concurrent = 10
 # NSFW 批量开启批次大小
 batch_size = 50
 # NSFW 请求超时时间（秒）
+timeout = 60
+
+# ==================== Usage ====================
+[usage]
+# Usage 批量开启并发上限
+concurrent = 10
+# Usage 批量开启批次大小
+batch_size = 50
+# Usage 请求超时时间（秒）
 timeout = 60
 
 
@@ -148,13 +156,3 @@ timeout = 60
 
 # Media 生成并发上限
 media_max_concurrent = 50
-
-# Token 用量刷新并发上限
-usage_max_concurrent = 25
-# Token 用量刷新批次大小
-usage_batch_size = 50
-# Token 用量单次最大数量
-usage_max_tokens = 1000
-
-# NSFW 单次最大数量
-nsfw_max_tokens = 1000

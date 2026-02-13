@@ -32,7 +32,7 @@ class UsageService:
         Raises:
             UpstreamException: 当获取失败且重试耗尽时
         """
-        value = get_config("performance.usage_max_concurrent")
+        value = get_config("usage.concurrent")
         try:
             value = int(value)
         except Exception:
@@ -58,11 +58,8 @@ class UsageService:
                 raise
 
 
-class BatchUsageService:
-    """Batch usage orchestration."""
-
     @staticmethod
-    async def refresh(
+    async def batch(
         tokens: List[str],
         mgr,
         *,
@@ -84,4 +81,4 @@ class BatchUsageService:
         )
 
 
-__all__ = ["BatchUsageService", "UsageService"]
+__all__ = ["UsageService"]
