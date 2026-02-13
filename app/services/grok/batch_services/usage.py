@@ -3,13 +3,13 @@ Batch usage service.
 """
 
 import asyncio
-from typing import Callable, Awaitable, Dict, Any, Optional
+from typing import Callable, Awaitable, Dict, Any, Optional, List
 
 from curl_cffi.requests import AsyncSession
 
 from app.core.logger import logger
 from app.core.config import get_config
-from app.services.reverse import RateLimitsReverse
+from app.services.reverse.rate_limits import RateLimitsReverse
 from app.services.grok.utils.batch import run_in_batches
 
 _USAGE_SEMAPHORE = asyncio.Semaphore(25)
@@ -63,7 +63,7 @@ class BatchUsageService:
 
     @staticmethod
     async def refresh(
-        tokens: list[str],
+        tokens: List[str],
         mgr,
         *,
         max_concurrent: int,

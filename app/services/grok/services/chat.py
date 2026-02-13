@@ -18,7 +18,7 @@ from app.core.exceptions import (
 from app.services.grok.models.model import ModelService
 from app.services.grok.utils.upload import UploadService
 from app.services.grok.processors import StreamProcessor, CollectProcessor
-from app.services.reverse import AppChatReverse
+from app.services.reverse.app_chat import AppChatReverse
 from app.services.grok.utils.stream import wrap_stream_with_usage
 from app.services.token import get_token_manager, EffortType
 

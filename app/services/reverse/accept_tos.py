@@ -1,5 +1,5 @@
 """
-Reverse interface: NSFW feature controls (gRPC-Web).
+Reverse interface: accept ToS (gRPC-Web).
 """
 
 from curl_cffi.requests import AsyncSession
@@ -11,15 +11,15 @@ from app.services.reverse.utils.headers import build_headers
 from app.services.reverse.utils.retry import retry_on_status
 from app.services.reverse.utils.grpc import GrpcClient, GrpcStatus
 
-NSFW_MGMT_API = "https://grok.com/auth_mgmt.AuthManagement/UpdateUserFeatureControls"
+ACCEPT_TOS_API = "https://accounts.x.ai/auth_mgmt.AuthManagement/SetTosAcceptedVersion"
 
 
-class NsfwMgmtReverse:
-    """/auth_mgmt.AuthManagement/UpdateUserFeatureControls reverse interface."""
+class AcceptTosReverse:
+    """/auth_mgmt.AuthManagement/SetTosAcceptedVersion reverse interface."""
 
     @staticmethod
     async def request(session: AsyncSession, token: str) -> GrpcStatus:
-        """Enable NSFW feature control via gRPC-Web.
+        """Accept ToS via gRPC-Web.
 
         Args:
             session: AsyncSession, the session to use for the request.
@@ -36,8 +36,8 @@ class NsfwMgmtReverse:
             # Build headers
             headers = build_headers(
                 cookie_token=token,
-                origin="https://grok.com",
-                referer="https://grok.com/?_s=data",
+                origin="https://accounts.x.ai",
+                referer="https://accounts.x.ai/accept-tos",
             )
             headers["Content-Type"] = "application/grpc-web+proto"
             headers["Accept"] = "*/*"
@@ -48,10 +48,7 @@ class NsfwMgmtReverse:
             headers["Pragma"] = "no-cache"
 
             # Build payload
-            name = "always_show_nsfw_content".encode("utf-8")
-            inner = b"\x0a" + bytes([len(name)]) + name
-            protobuf = b"\x0a\x02\x10\x01\x12" + bytes([len(inner)]) + inner
-            payload = GrpcClient.encode_payload(protobuf)
+            payload = GrpcClient.encode_payload(b"\x10\x01")
 
             # Curl Config
             timeout = get_config("nsfw.timeout")
@@ -59,7 +56,7 @@ class NsfwMgmtReverse:
 
             async def _do_request():
                 response = await session.post(
-                    NSFW_MGMT_API,
+                    ACCEPT_TOS_API,
                     headers=headers,
                     data=payload,
                     timeout=timeout,
@@ -69,15 +66,15 @@ class NsfwMgmtReverse:
 
                 if response.status_code != 200:
                     logger.error(
-                        f"NsfwMgmtReverse: Request failed, {response.status_code}",
+                        f"AcceptTosReverse: Request failed, {response.status_code}",
                         extra={"error_type": "UpstreamException"},
                     )
                     raise UpstreamException(
-                        message=f"NsfwMgmtReverse: Request failed, {response.status_code}",
+                        message=f"AcceptTosReverse: Request failed, {response.status_code}",
                         details={"status": response.status_code},
                     )
 
-                logger.debug(f"NsfwMgmtReverse: Request successful, {response.status_code}")
+                logger.debug(f"AcceptTosReverse: Request successful, {response.status_code}")
 
                 return response
 
@@ -92,7 +89,7 @@ class NsfwMgmtReverse:
 
             if grpc_status.code not in (-1, 0):
                 raise UpstreamException(
-                    message=f"NsfwMgmtReverse: gRPC failed, {grpc_status.code}",
+                    message=f"AcceptTosReverse: gRPC failed, {grpc_status.code}",
                     details={
                         "status": grpc_status.http_equiv,
                         "grpc_status": grpc_status.code,
@@ -105,22 +102,17 @@ class NsfwMgmtReverse:
         except Exception as e:
             # Handle upstream exception
             if isinstance(e, UpstreamException):
-                status = None
-                if e.details and "status" in e.details:
-                    status = e.details["status"]
-                else:
-                    status = getattr(e, "status_code", None)
                 raise
 
             # Handle other non-upstream exceptions
             logger.error(
-                f"NsfwMgmtReverse: Request failed, {str(e)}",
+                f"AcceptTosReverse: Request failed, {str(e)}",
                 extra={"error_type": type(e).__name__},
             )
             raise UpstreamException(
-                message=f"NsfwMgmtReverse: Request failed, {str(e)}",
+                message=f"AcceptTosReverse: Request failed, {str(e)}",
                 details={"status": 502, "error": str(e)},
             )
 
 
-__all__ = ["NsfwMgmtReverse"]
+__all__ = ["AcceptTosReverse"]

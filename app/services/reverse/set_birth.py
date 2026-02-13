@@ -10,7 +10,6 @@ from curl_cffi.requests import AsyncSession
 from app.core.logger import logger
 from app.core.config import get_config
 from app.core.exceptions import UpstreamException
-from app.services.token.service import TokenService
 from app.services.reverse.utils.headers import build_headers
 from app.services.reverse.utils.retry import retry_on_status
 
@@ -46,7 +45,7 @@ class SetBirthReverse:
 
             # Build payload
             today = datetime.date.today()
-            birth_year = today.year - random.randint(20, 40)
+            birth_year = today.year - random.randint(20, 48)
             birth_month = random.randint(1, 12)
             birth_day = random.randint(1, 28)
             hour = random.randint(0, 23)
@@ -59,7 +58,7 @@ class SetBirthReverse:
             }
 
             # Curl Config
-            timeout = get_config("network.timeout")
+            timeout = get_config("nsfw.timeout")
             browser = get_config("security.browser")
 
             async def _do_request():
@@ -82,6 +81,8 @@ class SetBirthReverse:
                         details={"status": response.status_code},
                     )
 
+                logger.debug(f"SetBirthReverse: Request successful, {response.status_code}")
+
                 return response
 
             return await retry_on_status(_do_request)
@@ -94,13 +95,6 @@ class SetBirthReverse:
                     status = e.details["status"]
                 else:
                     status = getattr(e, "status_code", None)
-                if status == 401:
-                    try:
-                        await TokenService.record_fail(
-                            token, status, "set_birth_auth_failed"
-                        )
-                    except Exception:
-                        pass
                 raise
 
             # Handle other non-upstream exceptions

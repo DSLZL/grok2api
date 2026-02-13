@@ -19,7 +19,7 @@ from app.core.config import get_config
 from app.core.exceptions import AppException, UpstreamException, ValidationException
 from app.core.logger import logger
 from app.core.storage import DATA_DIR
-from app.services.reverse import AssetsUploadReverse
+from app.services.reverse.assets_upload import AssetsUploadReverse
 from app.services.grok.utils.locks import _get_upload_semaphore, _file_lock
 
 

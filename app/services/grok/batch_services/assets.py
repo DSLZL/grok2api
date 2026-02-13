@@ -9,7 +9,8 @@ from curl_cffi.requests import AsyncSession
 
 from app.core.config import get_config
 from app.core.logger import logger
-from app.services.reverse import AssetsListReverse, AssetsDeleteReverse
+from app.services.reverse.assets_list import AssetsListReverse
+from app.services.reverse.assets_delete import AssetsDeleteReverse
 from app.services.grok.utils.batch import run_in_batches
 
 
@@ -102,7 +103,7 @@ class ListService(BaseAssetsService):
 
     @staticmethod
     async def fetch_assets_details(
-        tokens: list[str],
+        tokens: List[str],
         account_map: dict,
         *,
         max_concurrent: int,
@@ -190,7 +191,7 @@ class DeleteService(BaseAssetsService):
 
     @staticmethod
     async def clear_assets(
-        tokens: list[str],
+        tokens: List[str],
         mgr,
         *,
         max_concurrent: int,

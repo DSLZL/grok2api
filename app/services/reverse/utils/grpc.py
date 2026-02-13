@@ -3,11 +3,14 @@ gRPC-Web helpers for reverse interfaces.
 """
 
 import base64
+import json
 import re
 import struct
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Tuple
 from urllib.parse import unquote
+
+from app.core.logger import logger
 
 # Base64 正则
 B64_RE = re.compile(rb"^[A-Za-z0-9+/=\r\n]+$")
@@ -37,6 +40,22 @@ class GrpcStatus:
 
 class GrpcClient:
     """gRPC-Web helpers wrapper."""
+
+    @staticmethod
+    def _safe_headers(headers: Optional[Mapping[str, str]]) -> Dict[str, str]:
+        if not headers:
+            return {}
+        safe: Dict[str, str] = {}
+        for k, v in headers.items():
+            if k.lower() in ("set-cookie", "cookie", "authorization"):
+                safe[k] = "<redacted>"
+            else:
+                safe[k] = str(v)
+        return safe
+
+    @staticmethod
+    def _b64(data: bytes) -> str:
+        return base64.b64encode(data).decode()
 
     @staticmethod
     def encode_payload(data: bytes) -> bytes:
@@ -117,6 +136,35 @@ class GrpcClient:
                 trailers["grpc-status"] = str(lower["grpc-status"]).strip()
             if "grpc-message" in lower and "grpc-message" not in trailers:
                 trailers["grpc-message"] = unquote(str(lower["grpc-message"]).strip())
+
+        # Log full response details on gRPC error
+        raw_status = str(trailers.get("grpc-status", "")).strip()
+        try:
+            status_code = int(raw_status)
+        except Exception:
+            status_code = -1
+
+        if status_code not in (0, -1):
+            try:
+                payload = {
+                    "grpc_status": status_code,
+                    "grpc_message": trailers.get("grpc-message", ""),
+                    "content_type": content_type or "",
+                    "headers": cls._safe_headers(headers),
+                    "trailers": trailers,
+                    "messages_b64": [cls._b64(m) for m in messages],
+                    "body_b64": cls._b64(body),
+                }
+                logger.error(
+                    "gRPC response error: {}",
+                    json.dumps(payload, ensure_ascii=False),
+                    extra={"error_type": "GrpcError"},
+                )
+            except Exception as e:
+                logger.error(
+                    f"gRPC response error: failed to log payload ({e})",
+                    extra={"error_type": "GrpcError"},
+                )
 
         return messages, trailers
 

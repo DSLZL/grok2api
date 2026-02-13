@@ -7,7 +7,7 @@ from typing import Any, Dict
 from curl_cffi.requests import AsyncSession
 
 from app.core.config import get_config
-from app.services.reverse import LivekitTokenReverse
+from app.services.reverse.ws_livekit import LivekitTokenReverse
 
 
 class VoiceService:

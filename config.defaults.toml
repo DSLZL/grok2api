@@ -132,6 +132,16 @@ delete_timeout = 60
 # 资产删除批次大小（Token 维度）
 delete_batch_size = 10
 
+# ==================== NSFW ====================
+[nsfw]
+
+# NSFW 批量开启并发上限
+concurrent = 10
+# NSFW 批量开启批次大小
+batch_size = 50
+# NSFW 请求超时时间（秒）
+timeout = 60
+
 
 # ==================== 并发性能 ====================
 [performance]
@@ -146,9 +156,5 @@ usage_batch_size = 50
 # Token 用量单次最大数量
 usage_max_tokens = 1000
 
-# NSFW 批量开启并发上限
-nsfw_max_concurrent = 10
-# NSFW 批量开启批次大小
-nsfw_batch_size = 50
 # NSFW 单次最大数量
 nsfw_max_tokens = 1000

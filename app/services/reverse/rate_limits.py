@@ -9,7 +9,6 @@ from curl_cffi.requests import AsyncSession
 from app.core.logger import logger
 from app.core.config import get_config
 from app.core.exceptions import UpstreamException
-from app.services.token.service import TokenService
 from app.services.reverse.utils.headers import build_headers
 from app.services.reverse.utils.retry import retry_on_status
 
@@ -85,13 +84,6 @@ class RateLimitsReverse:
                     status = e.details["status"]
                 else:
                     status = getattr(e, "status_code", None)
-                if status == 401:
-                    try:
-                        await TokenService.record_fail(
-                            token, status, "rate_limits_auth_failed"
-                        )
-                    except Exception:
-                        pass
                 raise
 
             # Handle other non-upstream exceptions

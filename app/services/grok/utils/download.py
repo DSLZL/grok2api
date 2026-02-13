@@ -19,7 +19,7 @@ from app.core.logger import logger
 from app.core.storage import DATA_DIR
 from app.core.config import get_config
 from app.core.exceptions import AppException
-from app.services.reverse import AssetsDownloadReverse
+from app.services.reverse.assets_download import AssetsDownloadReverse
 from app.services.grok.utils.locks import _get_download_semaphore, _file_lock
 
 

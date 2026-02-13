@@ -54,15 +54,30 @@ reload_interval_sec = 30
 enable_auto_clean = true
 limit_mb = 1024
 
+[asset]
+upload_concurrent = 30
+upload_timeout = 60
+download_concurrent = 30
+download_timeout = 60
+list_concurrent = 10
+list_timeout = 60
+list_batch_size = 10
+delete_concurrent = 10
+delete_timeout = 60
+delete_batch_size = 10
+
+[nsfw]
+concurrent = 10
+batch_size = 50
+timeout = 60
+
 [performance]
-assets_max_concurrent = 25
-assets_delete_batch_size = 10
-assets_batch_size = 10
-assets_max_tokens = 1000
 media_max_concurrent = 50
 usage_max_concurrent = 25
 usage_batch_size = 50
 usage_max_tokens = 1000
-nsfw_max_concurrent = 10
-nsfw_batch_size = 50
 nsfw_max_tokens = 1000
+assets_max_concurrent = 25
+assets_delete_batch_size = 10
+assets_batch_size = 10
+assets_max_tokens = 1000

@@ -16,6 +16,7 @@ from app.services.token.models import (
 )
 from app.core.storage import get_storage, LocalStorage
 from app.core.config import get_config
+from app.core.exceptions import UpstreamException
 from app.services.token.pool import TokenPool
 from app.services.grok.batch_services.usage import UsageService
 
@@ -382,6 +383,14 @@ class TokenManager:
                 return True
 
         except Exception as e:
+            if isinstance(e, UpstreamException):
+                status = None
+                if e.details and "status" in e.details:
+                    status = e.details["status"]
+                else:
+                    status = getattr(e, "status_code", None)
+                if status in (401, 403):
+                    await self.record_fail(token_str, status, "rate_limits_auth_failed")
             logger.warning(
                 f"Token {raw_token[:10]}...: API sync failed, fallback to local ({e})"
             )

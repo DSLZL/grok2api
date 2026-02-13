@@ -8,7 +8,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
-from typing import Optional
+from typing import Optional, List, Tuple
 from pydantic import BaseModel
 from app.core.auth import verify_api_key, verify_app_key, get_admin_api_key
 from app.core.config import config, get_config
@@ -16,7 +16,8 @@ from app.core.batch_tasks import create_task, get_task, expire_task
 from app.core.storage import get_storage, LocalStorage, RedisStorage, SQLStorage
 from app.core.exceptions import AppException
 from app.services.token.manager import get_token_manager
-from app.services.grok.batch_services import BatchUsageService, BatchNSFWService
+from app.services.grok.batch_services import BatchUsageService
+from app.services.grok.batch_services.nsfw import NSFWService
 from app.services.grok.batch_services.assets import ListService, DeleteService
 import os
 import time
@@ -87,7 +88,7 @@ async def _delete_imagine_session(task_id: str) -> None:
         _IMAGINE_SESSIONS.pop(task_id, None)
 
 
-async def _delete_imagine_sessions(task_ids: list[str]) -> int:
+async def _delete_imagine_sessions(task_ids: List[str]) -> int:
     if not task_ids:
         return 0
     removed = 0
@@ -99,7 +100,7 @@ async def _delete_imagine_sessions(task_ids: list[str]) -> int:
     return removed
 
 
-def _collect_tokens(data: dict) -> list[str]:
+def _collect_tokens(data: dict) -> List[str]:
     """从请求数据中收集 token 列表"""
     tokens = []
     if isinstance(data.get("token"), str) and data["token"].strip():
@@ -110,8 +111,8 @@ def _collect_tokens(data: dict) -> list[str]:
 
 
 def _truncate_tokens(
-    tokens: list[str], max_tokens: int, operation: str = "operation"
-) -> tuple[list[str], bool, int]:
+    tokens: List[str], max_tokens: int, operation: str = "operation"
+) -> Tuple[List[str], bool, int]:
     """去重并截断 token 列表，返回 (unique_tokens, truncated, original_count)"""
     unique_tokens = list(dict.fromkeys(tokens))
     original_count = len(unique_tokens)
@@ -538,7 +539,7 @@ async def admin_imagine_start(data: ImagineStartRequest):
 
 
 class ImagineStopRequest(BaseModel):
-    task_ids: list[str]
+    task_ids: List[str]
 
 
 @router.post("/api/v1/admin/imagine/stop", dependencies=[Depends(verify_api_key)])
@@ -970,10 +971,10 @@ async def enable_nsfw_api(data: dict):
         )
 
         # 批量执行配置
-        max_concurrent = get_config("performance.nsfw_max_concurrent")
-        batch_size = get_config("performance.nsfw_batch_size")
+        max_concurrent = get_config("nsfw.concurrent")
+        batch_size = get_config("nsfw.batch_size")
 
-        raw_results = await BatchNSFWService.enable(
+        raw_results = await NSFWService.batch(
             unique_tokens,
             mgr,
             max_concurrent=max_concurrent,
@@ -1043,8 +1044,8 @@ async def enable_nsfw_api_async(data: dict):
         tokens, max_tokens, "NSFW enable"
     )
 
-    max_concurrent = get_config("performance.nsfw_max_concurrent")
-    batch_size = get_config("performance.nsfw_batch_size")
+    max_concurrent = get_config("nsfw.concurrent")
+    batch_size = get_config("nsfw.batch_size")
 
     task = create_task(len(unique_tokens))
 
@@ -1055,7 +1056,7 @@ async def enable_nsfw_api_async(data: dict):
                 ok = bool(res.get("ok") and res.get("data", {}).get("success"))
                 task.record(ok)
 
-            raw_results = await BatchNSFWService.enable(
+            raw_results = await NSFWService.batch(
                 unique_tokens,
                 mgr,
                 max_concurrent=max_concurrent,
@@ -1328,7 +1329,7 @@ async def load_online_cache_api_async(data: dict):
 
     tokens = data.get("tokens")
     scope = data.get("scope")
-    selected_tokens: list[str] = []
+    selected_tokens: List[str] = []
     if isinstance(tokens, list):
         selected_tokens = [str(t).strip() for t in tokens if str(t).strip()]
 

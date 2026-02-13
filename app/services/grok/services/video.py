@@ -18,7 +18,8 @@ from app.services.grok.models.model import ModelService
 from app.services.token import get_token_manager, EffortType
 from app.services.grok.processors import VideoStreamProcessor, VideoCollectProcessor
 from app.services.grok.utils.stream import wrap_stream_with_usage
-from app.services.reverse import AppChatReverse, MediaPostReverse
+from app.services.reverse.app_chat import AppChatReverse
+from app.services.reverse.media_post import MediaPostReverse
 
 _MEDIA_SEMAPHORE = None
 _MEDIA_SEM_VALUE = 0

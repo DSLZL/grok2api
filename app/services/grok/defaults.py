@@ -74,13 +74,16 @@ GROK_DEFAULTS = {
         "delete_timeout": 60,
         "delete_batch_size": 10,
     },
+    "nsfw": {
+        "concurrent": 10,
+        "batch_size": 50,
+        "timeout": 60,
+    },
     "performance": {
         "media_max_concurrent": 50,
         "usage_max_concurrent": 25,
         "usage_batch_size": 50,
         "usage_max_tokens": 1000,
-        "nsfw_max_concurrent": 10,
-        "nsfw_batch_size": 50,
         "nsfw_max_tokens": 1000,
     },
 }
