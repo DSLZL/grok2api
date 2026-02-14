@@ -44,31 +44,34 @@ def _migrate_deprecated_config(
     # 配置映射规则：旧配置 -> 新配置
     MIGRATION_MAP = {
         # grok.* -> 对应的新配置节
-        "grok.temporary": "chat.temporary",
-        "grok.disable_memory": "chat.disable_memory",
-        "grok.stream": "chat.stream",
-        "grok.thinking": "chat.thinking",
-        "grok.dynamic_statsig": "chat.dynamic_statsig",
-        "grok.filter_tags": "chat.filter_tags",
-        "grok.timeout": "network.timeout",
-        "grok.base_proxy_url": "network.base_proxy_url",
-        "grok.asset_proxy_url": "network.asset_proxy_url",
-        "grok.cf_clearance": "security.cf_clearance",
-        "grok.browser": "security.browser",
-        "grok.user_agent": "security.user_agent",
+        "grok.temporary": "app.temporary",
+        "grok.disable_memory": "app.disable_memory",
+        "grok.stream": "app.stream",
+        "grok.thinking": "app.thinking",
+        "grok.dynamic_statsig": "app.dynamic_statsig",
+        "grok.filter_tags": "app.filter_tags",
+        "grok.timeout": "voice.timeout",
+        "grok.base_proxy_url": "proxy.base_proxy_url",
+        "grok.asset_proxy_url": "proxy.asset_proxy_url",
+        "network.base_proxy_url": "proxy.base_proxy_url",
+        "network.asset_proxy_url": "proxy.asset_proxy_url",
+        "grok.cf_clearance": "proxy.cf_clearance",
+        "grok.browser": "proxy.browser",
+        "grok.user_agent": "proxy.user_agent",
+        "security.cf_clearance": "proxy.cf_clearance",
+        "security.browser": "proxy.browser",
+        "security.user_agent": "proxy.user_agent",
         "grok.max_retry": "retry.max_retry",
         "grok.retry_status_codes": "retry.retry_status_codes",
         "grok.retry_backoff_base": "retry.retry_backoff_base",
         "grok.retry_backoff_factor": "retry.retry_backoff_factor",
         "grok.retry_backoff_max": "retry.retry_backoff_max",
         "grok.retry_budget": "retry.retry_budget",
-        "grok.stream_idle_timeout": "timeout.stream_idle_timeout",
-        "grok.video_idle_timeout": "timeout.video_idle_timeout",
-        "grok.image_ws": "image.image_ws",
-        "grok.image_ws_nsfw": "image.image_ws_nsfw",
-        "grok.image_ws_blocked_seconds": "image.image_ws_blocked_seconds",
-        "grok.image_ws_final_min_bytes": "image.image_ws_final_min_bytes",
-        "grok.image_ws_medium_min_bytes": "image.image_ws_medium_min_bytes",
+        "grok.video_idle_timeout": "video.stream_timeout",
+        "grok.image_ws_nsfw": "image.nsfw",
+        "grok.image_ws_blocked_seconds": "image.final_timeout",
+        "grok.image_ws_final_min_bytes": "image.final_min_bytes",
+        "grok.image_ws_medium_min_bytes": "image.medium_min_bytes",
     }
 
     deprecated_sections = set(config.keys()) - valid_sections
@@ -98,8 +101,32 @@ def _migrate_deprecated_config(
                 migrated_count += 1
                 logger.debug(f"Migrated config: {old_path} -> {new_path} = {old_value}")
 
+    # 兼容旧 chat.* 配置键迁移到 app.*
+    legacy_chat_map = {
+        "temporary": "temporary",
+        "disable_memory": "disable_memory",
+        "stream": "stream",
+        "thinking": "thinking",
+        "dynamic_statsig": "dynamic_statsig",
+        "filter_tags": "filter_tags",
+    }
+    chat_section = config.get("chat")
+    if isinstance(chat_section, dict):
+        app_section = result.setdefault("app", {})
+        for old_key, new_key in legacy_chat_map.items():
+            if old_key in chat_section and new_key not in app_section:
+                app_section[new_key] = chat_section[old_key]
+                if isinstance(result.get("chat"), dict):
+                    result["chat"].pop(old_key, None)
+                migrated_count += 1
+                logger.debug(
+                    f"Migrated config: chat.{old_key} -> app.{new_key} = {chat_section[old_key]}"
+                )
+
     if migrated_count > 0:
-        logger.info(f"Migrated {migrated_count} config items from deprecated sections")
+        logger.info(
+            f"Migrated {migrated_count} config items from deprecated/legacy sections"
+        )
 
     return result, deprecated_sections
 

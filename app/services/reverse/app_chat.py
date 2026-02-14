@@ -41,7 +41,7 @@ class AppChatReverse:
                 "viewportWidth": 2056,
                 "viewportHeight": 1083,
             },
-            "disableMemory": get_config("chat.disable_memory"),
+            "disableMemory": get_config("app.disable_memory"),
             "disableSearch": False,
             "disableSelfHarmShortCircuit": False,
             "disableTextFollowUps": False,
@@ -64,7 +64,7 @@ class AppChatReverse:
             "returnImageBytes": False,
             "returnRawGrokInXaiRequest": False,
             "sendFinalMetadata": True,
-            "temporary": get_config("chat.temporary"),
+            "temporary": get_config("app.temporary"),
             "toolOverrides": tool_overrides or {},
         }
 
@@ -101,7 +101,7 @@ class AppChatReverse:
         """
         try:
             # Get proxies
-            base_proxy = get_config("network.base_proxy_url")
+            base_proxy = get_config("proxy.base_proxy_url")
             proxies = {"http": base_proxy, "https": base_proxy} if base_proxy else None
 
             # Build headers
@@ -123,8 +123,12 @@ class AppChatReverse:
             )
 
             # Curl Config
-            timeout = get_config("network.timeout")
-            browser = get_config("security.browser")
+            timeout = max(
+                float(get_config("chat.timeout") or 0),
+                float(get_config("video.timeout") or 0),
+                float(get_config("image.timeout") or 0),
+            )
+            browser = get_config("proxy.browser")
 
             async def _do_request():
                 response = await session.post(

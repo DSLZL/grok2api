@@ -149,11 +149,11 @@
     }
   }
 
-  async function createImagineTask(prompt, ratio, apiKey) {
-    const res = await fetch('/api/v1/admin/imagine/start', {
+  async function createImagineTask(prompt, ratio, authHeader) {
+    const res = await fetch('/v1/public/imagine/start', {
       method: 'POST',
       headers: {
-        ...buildAuthHeaders(apiKey),
+        ...buildAuthHeaders(authHeader),
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ prompt, aspect_ratio: ratio })
@@ -166,10 +166,10 @@
     return data && data.task_id ? String(data.task_id) : '';
   }
 
-  async function createImagineTasks(prompt, ratio, concurrent, apiKey) {
+  async function createImagineTasks(prompt, ratio, concurrent, authHeader) {
     const tasks = [];
     for (let i = 0; i < concurrent; i++) {
-      const taskId = await createImagineTask(prompt, ratio, apiKey);
+      const taskId = await createImagineTask(prompt, ratio, authHeader);
       if (!taskId) {
         throw new Error('Missing task id');
       }
@@ -178,13 +178,13 @@
     return tasks;
   }
 
-  async function stopImagineTasks(taskIds, apiKey) {
+  async function stopImagineTasks(taskIds, authHeader) {
     if (!taskIds || taskIds.length === 0) return;
     try {
-      await fetch('/api/v1/admin/imagine/stop', {
+      await fetch('/v1/public/imagine/stop', {
         method: 'POST',
         headers: {
-          ...buildAuthHeaders(apiKey),
+          ...buildAuthHeaders(authHeader),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ task_ids: taskIds })
@@ -365,19 +365,30 @@
     updateModeValue();
   }
 
-  function buildSseUrl(taskId, index) {
+  function normalizeAuthHeader(authHeader) {
+    if (!authHeader) return '';
+    if (authHeader.startsWith('Bearer ')) {
+      return authHeader.slice(7).trim();
+    }
+    return authHeader;
+  }
+
+  function buildSseUrl(taskId, index, rawPublicKey) {
     const httpProtocol = window.location.protocol === 'https:' ? 'https' : 'http';
-    const base = `${httpProtocol}://${window.location.host}/api/v1/admin/imagine/sse`;
+    const base = `${httpProtocol}://${window.location.host}/v1/public/imagine/sse`;
     const params = new URLSearchParams();
     params.set('task_id', taskId);
     params.set('t', String(Date.now()));
     if (typeof index === 'number') {
       params.set('conn', String(index));
     }
+    if (rawPublicKey) {
+      params.set('public_key', rawPublicKey);
+    }
     return `${base}?${params.toString()}`;
   }
 
-  function startSSE(taskIds) {
+  function startSSE(taskIds, rawPublicKey) {
     connectionMode = 'sse';
     stopAllConnections();
     updateModeValue();
@@ -387,7 +398,7 @@
     toast(`已启动 ${taskIds.length} 个并发任务 (SSE)`, 'success');
 
     for (let i = 0; i < taskIds.length; i++) {
-      const url = buildSseUrl(taskIds[i], i);
+      const url = buildSseUrl(taskIds[i], i, rawPublicKey);
       const es = new EventSource(url);
 
       es.onopen = () => {
@@ -421,11 +432,13 @@
       return;
     }
 
-    const apiKey = await ensureApiKey();
-    if (apiKey === null) {
-      toast('请先登录后台', 'error');
+    const authHeader = await ensurePublicKey();
+    if (authHeader === null) {
+      toast('请先配置 Public Key', 'error');
+      window.location.href = '/login';
       return;
     }
+    const rawPublicKey = normalizeAuthHeader(authHeader);
 
     const concurrent = concurrentSelect ? parseInt(concurrentSelect.value, 10) : 1;
     const ratio = ratioSelect ? ratioSelect.value : '2:3';
@@ -446,7 +459,7 @@
 
     let taskIds = [];
     try {
-      taskIds = await createImagineTasks(prompt, ratio, concurrent, apiKey);
+      taskIds = await createImagineTasks(prompt, ratio, concurrent, authHeader);
     } catch (e) {
       setStatus('error', '创建任务失败');
       startBtn.disabled = false;
@@ -456,7 +469,7 @@
     currentTaskIds = taskIds;
 
     if (modePreference === 'sse') {
-      startSSE(taskIds);
+      startSSE(taskIds, rawPublicKey);
       return;
     }
 
@@ -471,7 +484,7 @@
       fallbackTimer = setTimeout(() => {
         if (!fallbackDone && opened === 0) {
           fallbackDone = true;
-          startSSE(taskIds);
+          startSSE(taskIds, rawPublicKey);
         }
       }, 1500);
     }
@@ -481,7 +494,11 @@
 
     for (let i = 0; i < taskIds.length; i++) {
       const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const wsUrl = `${protocol}://${window.location.host}/api/v1/admin/imagine/ws?task_id=${encodeURIComponent(taskIds[i])}`;
+      const params = new URLSearchParams({ task_id: taskIds[i] });
+      if (rawPublicKey) {
+        params.set('public_key', rawPublicKey);
+      }
+      const wsUrl = `${protocol}://${window.location.host}/v1/public/imagine/ws?${params.toString()}`;
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -520,7 +537,7 @@
           if (fallbackTimer) {
             clearTimeout(fallbackTimer);
           }
-          startSSE(taskIds);
+          startSSE(taskIds, rawPublicKey);
           return;
         }
         if (i === 0 && wsConnections.filter(w => w && w.readyState === WebSocket.OPEN).length === 0) {
@@ -555,9 +572,9 @@
       pendingFallbackTimer = null;
     }
 
-    const apiKey = await ensureApiKey();
-    if (apiKey && currentTaskIds.length > 0) {
-      await stopImagineTasks(currentTaskIds, apiKey);
+    const authHeader = await ensurePublicKey();
+    if (authHeader !== null && currentTaskIds.length > 0) {
+      await stopImagineTasks(currentTaskIds, authHeader);
     }
 
     stopAllConnections();

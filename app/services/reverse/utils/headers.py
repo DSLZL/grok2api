@@ -27,7 +27,7 @@ def build_sso_cookie(sso_token: str) -> str:
     cookie = f"sso={sso_token}; sso-rw={sso_token}"
 
     # CF Clearance
-    cf_clearance = get_config("security.cf_clearance")
+    cf_clearance = get_config("proxy.cf_clearance")
     if cf_clearance:
         cookie += f";cf_clearance={cf_clearance}"
 
@@ -48,7 +48,7 @@ def build_ws_headers(token: Optional[str] = None, origin: Optional[str] = None, 
     """
     headers = {
         "Origin": origin or "https://grok.com",
-        "User-Agent": get_config("security.user_agent"),
+        "User-Agent": get_config("proxy.user_agent"),
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
@@ -90,7 +90,7 @@ def build_headers(cookie_token: str, content_type: Optional[str] = None, origin:
         "Sec-Ch-Ua-Model": "",
         "Sec-Ch-Ua-Platform": '"macOS"',
         "Sec-Fetch-Mode": "cors",
-        "User-Agent": get_config("security.user_agent"),
+        "User-Agent": get_config("proxy.user_agent"),
     }
 
     # Cookie

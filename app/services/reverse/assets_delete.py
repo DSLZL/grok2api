@@ -32,8 +32,8 @@ class AssetsDeleteReverse:
         """
         try:
             # Get proxies
-            base_proxy = get_config("network.base_proxy_url")
-            assert_proxy = get_config("network.asset_proxy_url")
+            base_proxy = get_config("proxy.base_proxy_url")
+            assert_proxy = get_config("proxy.asset_proxy_url")
             if assert_proxy:
                 proxies = {"http": assert_proxy, "https": assert_proxy}
             else:
@@ -49,7 +49,7 @@ class AssetsDeleteReverse:
 
             # Curl Config
             timeout = get_config("asset.delete_timeout")
-            browser = get_config("security.browser")
+            browser = get_config("proxy.browser")
 
             async def _do_request():
                 response = await session.delete(

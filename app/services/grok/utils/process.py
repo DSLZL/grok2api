@@ -87,6 +87,16 @@ async def _with_idle_timeout(
         return
 
     iterator = iterable.__aiter__()
+
+    async def _maybe_aclose(it):
+        aclose = getattr(it, "aclose", None)
+        if not aclose:
+            return
+        try:
+            await aclose()
+        except Exception:
+            pass
+
     while True:
         try:
             item = await asyncio.wait_for(iterator.__anext__(), timeout=idle_timeout)
@@ -96,7 +106,11 @@ async def _with_idle_timeout(
                 f"Stream idle timeout after {idle_timeout}s",
                 extra={"model": model, "idle_timeout": idle_timeout},
             )
+            await _maybe_aclose(iterator)
             raise StreamIdleTimeoutError(idle_timeout)
+        except asyncio.CancelledError:
+            await _maybe_aclose(iterator)
+            raise
         except StopAsyncIteration:
             break
 

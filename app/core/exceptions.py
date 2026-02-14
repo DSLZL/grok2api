@@ -218,7 +218,6 @@ def register_exception_handlers(app):
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-    app.add_exception_handler(Exception, generic_exception_handler)
 
 
 __all__ = [

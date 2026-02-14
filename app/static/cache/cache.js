@@ -84,7 +84,7 @@ function createIconButton(title, svg, onClick) {
 }
 
 async function init() {
-  apiKey = await ensureApiKey();
+  apiKey = await ensureAdminKey();
   if (apiKey === null) return;
   cacheUI();
   setupCacheCards();
@@ -233,7 +233,7 @@ async function loadStats(options = {}) {
     } else {
       currentScope = 'none';
     }
-    const url = `/api/v1/admin/cache${params.toString() ? `?${params.toString()}` : ''}`;
+    const url = `/v1/admin/cache${params.toString() ? `?${params.toString()}` : ''}`;
     const res = await fetch(url, {
       headers: buildAuthHeaders(apiKey)
     });
@@ -446,7 +446,7 @@ async function clearCache(type) {
   if (!ok) return;
 
   try {
-    const res = await fetch('/api/v1/admin/cache/clear', {
+    const res = await fetch('/v1/admin/cache/clear', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -770,7 +770,7 @@ async function loadLocalCacheList(type) {
   body.innerHTML = `<tr><td colspan="5">加载中...</td></tr>`;
   try {
     const params = new URLSearchParams({ type, page: '1', page_size: '1000' });
-    const res = await fetch(`/api/v1/admin/cache/list?${params.toString()}`, {
+    const res = await fetch(`/v1/admin/cache/list?${params.toString()}`, {
       headers: buildAuthHeaders(apiKey)
     });
     if (!res.ok) {
@@ -897,7 +897,7 @@ async function deleteLocalFile(type, name) {
 
 async function requestDeleteLocalFile(type, name) {
   try {
-    const res = await fetch('/api/v1/admin/cache/item/delete', {
+    const res = await fetch('/v1/admin/cache/item/delete', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1104,7 +1104,7 @@ async function startBatchLoad(tokens) {
   refreshBatchUI();
 
   try {
-    const res = await fetch('/api/v1/admin/cache/online/load/async', {
+    const res = await fetch('/v1/admin/cache/online/load/async', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1242,7 +1242,7 @@ async function startBatchDelete(tokens) {
   updateDeleteButton();
   refreshBatchUI();
   try {
-    const res = await fetch('/api/v1/admin/cache/online/clear/async', {
+    const res = await fetch('/v1/admin/cache/online/clear/async', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1337,7 +1337,7 @@ async function clearOnlineCache(targetToken = '', skipConfirm = false) {
   showToast('正在清理在线资产，请稍候...', 'info');
 
   try {
-    const res = await fetch('/api/v1/admin/cache/online/clear', {
+    const res = await fetch('/v1/admin/cache/online/clear', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

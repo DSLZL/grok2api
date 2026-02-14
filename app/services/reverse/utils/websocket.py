@@ -91,13 +91,14 @@ class WebSocketClient:
     """WebSocket client with proxy support."""
 
     def __init__(self, proxy: Optional[str] = None) -> None:
-        self.proxy = proxy or get_config("network.base_proxy_url")
+        self.proxy = proxy or get_config("proxy.base_proxy_url")
         self._ssl_context = _default_ssl_context()
 
     async def connect(
         self,
         url: str,
         headers: Optional[Mapping[str, str]] = None,
+        timeout: Optional[float] = None,
         ws_kwargs: Optional[Mapping[str, object]] = None,
     ) -> WebSocketConnection:
         """Connect to the WebSocket.
@@ -114,7 +115,12 @@ class WebSocketClient:
         connector, proxy = resolve_proxy(self.proxy, self._ssl_context)
 
         # Build client timeout
-        client_timeout = aiohttp.ClientTimeout(total=get_config("network.timeout"))
+        total_timeout = (
+            float(timeout)
+            if timeout is not None
+            else float(get_config("voice.timeout") or 120)
+        )
+        client_timeout = aiohttp.ClientTimeout(total=total_timeout)
 
         # Create session
         session = aiohttp.ClientSession(connector=connector, timeout=client_timeout)

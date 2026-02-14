@@ -425,10 +425,18 @@ class TokenManager:
             token = pool.get(raw_token)
             if token:
                 if status_code == 401:
-                    token.record_fail(status_code, reason)
+                    threshold = get_config("token.fail_threshold", FAIL_THRESHOLD)
+                    try:
+                        threshold = int(threshold)
+                    except (TypeError, ValueError):
+                        threshold = FAIL_THRESHOLD
+                    if threshold < 1:
+                        threshold = 1
+
+                    token.record_fail(status_code, reason, threshold=threshold)
                     logger.warning(
                         f"Token {raw_token[:10]}...: recorded {status_code} failure "
-                        f"({token.fail_count}/{FAIL_THRESHOLD}) - {reason}"
+                        f"({token.fail_count}/{threshold}) - {reason}"
                     )
                 else:
                     logger.info(

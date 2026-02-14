@@ -31,7 +31,7 @@ class RateLimitsReverse:
         """
         try:
             # Get proxies
-            base_proxy = get_config("network.base_proxy_url")
+            base_proxy = get_config("proxy.base_proxy_url")
             proxies = {"http": base_proxy, "https": base_proxy} if base_proxy else None
 
             # Build headers
@@ -50,7 +50,7 @@ class RateLimitsReverse:
 
             # Curl Config
             timeout = get_config("usage.timeout")
-            browser = get_config("security.browser")
+            browser = get_config("proxy.browser")
 
             async def _do_request():
                 response = await session.post(

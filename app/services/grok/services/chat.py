@@ -23,9 +23,23 @@ from app.core.exceptions import (
 from app.services.grok.services.model import ModelService
 from app.services.grok.utils.upload import UploadService
 from app.services.grok.utils import process as proc_base
+from app.services.grok.utils.retry import pick_token, rate_limited
 from app.services.reverse.app_chat import AppChatReverse
 from app.services.grok.utils.stream import wrap_stream_with_usage
 from app.services.token import get_token_manager, EffortType
+
+
+_CHAT_SEMAPHORE = None
+_CHAT_SEM_VALUE = None
+
+
+def _get_chat_semaphore() -> asyncio.Semaphore:
+    global _CHAT_SEMAPHORE, _CHAT_SEM_VALUE
+    value = max(1, int(get_config("chat.concurrent")))
+    if value != _CHAT_SEM_VALUE:
+        _CHAT_SEM_VALUE = value
+        _CHAT_SEMAPHORE = asyncio.Semaphore(value)
+    return _CHAT_SEMAPHORE
 
 
 class MessageExtractor:
@@ -110,31 +124,39 @@ class GrokChatService:
     ):
         """发送聊天请求"""
         if stream is None:
-            stream = get_config("chat.stream")
+            stream = get_config("app.stream")
 
         logger.debug(
             f"Chat request: model={model}, mode={mode}, stream={stream}, attachments={len(file_attachments or [])}"
         )
 
-        browser = get_config("security.browser")
-        session = AsyncSession(impersonate=browser)
-        try:
-            stream_response = await AppChatReverse.request(
-                session,
-                token,
-                message=message,
-                model=model,
-                mode=mode,
-                file_attachments=file_attachments,
-                tool_overrides=tool_overrides,
-                model_config_override=model_config_override,
-            )
-            logger.info(f"Chat connected: model={model}, stream={stream}")
-        except Exception:
-            await session.close()
-            raise
+        browser = get_config("proxy.browser")
 
-        return stream_response
+        async def _stream():
+            session = AsyncSession(impersonate=browser)
+            try:
+                async with _get_chat_semaphore():
+                    stream_response = await AppChatReverse.request(
+                        session,
+                        token,
+                        message=message,
+                        model=model,
+                        mode=mode,
+                        file_attachments=file_attachments,
+                        tool_overrides=tool_overrides,
+                        model_config_override=model_config_override,
+                    )
+                    logger.info(f"Chat connected: model={model}, stream={stream}")
+                    async for line in stream_response:
+                        yield line
+            except Exception:
+                try:
+                    await session.close()
+                except Exception:
+                    pass
+                raise
+
+        return _stream()
 
     async def chat_openai(
         self,
@@ -180,7 +202,7 @@ class GrokChatService:
                 await upload_service.close()
 
         all_attachments = file_ids + image_ids
-        stream = stream if stream is not None else get_config("chat.stream")
+        stream = stream if stream is not None else get_config("app.stream")
 
         model_config_override = {
             "temperature": temperature,
@@ -221,10 +243,10 @@ class ChatService:
 
         # 解析参数
         if reasoning_effort is None:
-            show_think = get_config("chat.thinking")
+            show_think = get_config("app.thinking")
         else:
             show_think = reasoning_effort != "none"
-        is_stream = stream if stream is not None else get_config("chat.stream")
+        is_stream = stream if stream is not None else get_config("app.stream")
 
         # 跨 Token 重试循环
         tried_tokens = set()
@@ -233,22 +255,7 @@ class ChatService:
 
         for attempt in range(max_token_retries):
             # 选择 token
-            token = None
-            for pool_name in ModelService.pool_candidates_for_model(model):
-                token = token_mgr.get_token(pool_name, exclude=tried_tokens)
-                if token:
-                    break
-
-            if not token and not tried_tokens:
-                # 首次就无 token，尝试刷新
-                logger.info("No available tokens, attempting to refresh cooling tokens...")
-                result = await token_mgr.refresh_cooling_tokens()
-                if result.get("recovered", 0) > 0:
-                    for pool_name in ModelService.pool_candidates_for_model(model):
-                        token = token_mgr.get_token(pool_name)
-                        if token:
-                            break
-
+            token = await pick_token(token_mgr, model, tried_tokens)
             if not token:
                 if last_error:
                     raise last_error
@@ -299,10 +306,9 @@ class ChatService:
                 return result
 
             except UpstreamException as e:
-                status_code = e.details.get("status") if e.details else None
                 last_error = e
 
-                if status_code == 429:
+                if rate_limited(e):
                     # 配额不足，标记 token 为 cooling 并换 token 重试
                     await token_mgr.mark_rate_limited(token)
                     logger.warning(
@@ -334,7 +340,7 @@ class StreamProcessor(proc_base.BaseProcessor):
         self.fingerprint: str = ""
         self.think_opened: bool = False
         self.role_sent: bool = False
-        self.filter_tags = get_config("chat.filter_tags")
+        self.filter_tags = get_config("app.filter_tags")
         self._tag_buffer: str = ""
         self._in_filter_tag: bool = False
 
@@ -419,7 +425,7 @@ class StreamProcessor(proc_base.BaseProcessor):
         Returns:
             AsyncGenerator[str, None], async generator of strings
         """
-        idle_timeout = get_config("timeout.stream_idle_timeout")
+        idle_timeout = get_config("chat.stream_timeout")
 
         try:
             async for line in proc_base._with_idle_timeout(
@@ -563,7 +569,7 @@ class CollectProcessor(proc_base.BaseProcessor):
 
     def __init__(self, model: str, token: str = ""):
         super().__init__(model, token)
-        self.filter_tags = get_config("chat.filter_tags")
+        self.filter_tags = get_config("app.filter_tags")
 
     def _filter_content(self, content: str) -> str:
         """Filter special tags in content."""
@@ -582,7 +588,7 @@ class CollectProcessor(proc_base.BaseProcessor):
         response_id = ""
         fingerprint = ""
         content = ""
-        idle_timeout = get_config("timeout.stream_idle_timeout")
+        idle_timeout = get_config("chat.stream_timeout")
 
         try:
             async for line in proc_base._with_idle_timeout(

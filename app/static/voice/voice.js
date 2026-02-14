@@ -128,9 +128,10 @@
     }
 
     try {
-      const apiKey = await ensureApiKey();
-      if (apiKey === null) {
-        toast('请先登录后台', 'error');
+      const authHeader = await ensurePublicKey();
+      if (authHeader === null) {
+        toast('请先配置 Public Key', 'error');
+        window.location.href = '/login';
         return;
       }
 
@@ -145,9 +146,9 @@
         speed: speedRange.value
       });
 
-      const headers = buildAuthHeaders(apiKey);
+      const headers = buildAuthHeaders(authHeader);
 
-      const response = await fetch(`/api/v1/admin/voice/token?${params.toString()}`, {
+      const response = await fetch(`/v1/public/voice/token?${params.toString()}`, {
         headers
       });
 

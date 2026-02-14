@@ -30,18 +30,24 @@ class ImagineWebSocketReverse:
         self._url_pattern = re.compile(r"/images/([a-f0-9-]+)\.(png|jpg|jpeg)")
         self._client = WebSocketClient()
 
-    def _extract_image_id(self, url: str) -> Optional[str]:
+    def _parse_image_url(self, url: str) -> tuple[Optional[str], Optional[str]]:
         match = self._url_pattern.search(url or "")
-        return match.group(1) if match else None
+        if not match:
+            return None, None
+        return match.group(1), match.group(2).lower()
 
     def _is_final_image(self, url: str, blob_size: int, final_min_bytes: int) -> bool:
-        return (url or "").lower().endswith((".jpg", ".jpeg")) and blob_size > final_min_bytes
+        url_lower = (url or "").lower()
+        if url_lower.endswith((".jpg", ".jpeg")):
+            return True
+        return blob_size > final_min_bytes
 
     def _classify_image(self, url: str, blob: str, final_min_bytes: int, medium_min_bytes: int) -> Optional[Dict[str, object]]:
         if not url or not blob:
             return None
 
-        image_id = self._extract_image_id(url) or uuid.uuid4().hex
+        image_id, ext = self._parse_image_url(url)
+        image_id = image_id or uuid.uuid4().hex
         blob_size = len(blob)
         is_final = self._is_final_image(url, blob_size, final_min_bytes)
 
@@ -54,6 +60,7 @@ class ImagineWebSocketReverse:
         return {
             "type": "image",
             "image_id": image_id,
+            "ext": ext,
             "stage": stage,
             "blob": blob,
             "blob_size": blob_size,
@@ -120,6 +127,11 @@ class ImagineWebSocketReverse:
                 logger.warning(f"WebSocket blocked, retry {attempt + 1}/{retries}")
             except Exception as e:
                 logger.error(f"WebSocket stream failed: {e}")
+                yield {
+                    "type": "error",
+                    "error_code": "ws_stream_failed",
+                    "error": str(e),
+                }
                 return
 
     async def _stream_once(
@@ -132,26 +144,33 @@ class ImagineWebSocketReverse:
     ) -> AsyncGenerator[Dict[str, object], None]:
         request_id = str(uuid.uuid4())
         headers = build_ws_headers(token=token)
-        timeout = float(get_config("network.timeout"))
-        blocked_seconds = float(get_config("image.image_ws_blocked_seconds"))
-        blocked_grace = min(10.0, blocked_seconds)
-        final_min_bytes = int(get_config("image.image_ws_final_min_bytes"))
-        medium_min_bytes = int(get_config("image.image_ws_medium_min_bytes"))
+        timeout = float(get_config("image.timeout"))
+        stream_timeout = float(get_config("image.stream_timeout"))
+        final_timeout = float(get_config("image.final_timeout"))
+        blocked_grace = min(10.0, final_timeout)
+        final_min_bytes = int(get_config("image.final_min_bytes"))
+        medium_min_bytes = int(get_config("image.medium_min_bytes"))
 
         try:
             conn = await self._client.connect(
                 WS_IMAGINE_URL,
                 headers=headers,
+                timeout=timeout,
                 ws_kwargs={
                     "heartbeat": 20,
-                    "receive_timeout": timeout,
+                    "receive_timeout": stream_timeout,
                 },
             )
         except Exception as e:
+            status = getattr(e, "status", None)
+            error_code = (
+                "rate_limit_exceeded" if status == 429 else "connection_failed"
+            )
             logger.error(f"WebSocket connect failed: {e}")
             yield {
                 "type": "error",
-                "error_code": "connection_failed",
+                "error_code": error_code,
+                "status": status,
                 "error": str(e),
             }
             return
@@ -238,7 +257,7 @@ class ImagineWebSocketReverse:
                         if (
                             medium_received_time
                             and completed == 0
-                            and time.monotonic() - medium_received_time > blocked_seconds
+                            and time.monotonic() - medium_received_time > final_timeout
                         ):
                             raise _BlockedError()
 

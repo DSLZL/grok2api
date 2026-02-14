@@ -107,7 +107,7 @@ function getPaginationData() {
 }
 
 async function init() {
-  apiKey = await ensureApiKey();
+  apiKey = await ensureAdminKey();
   if (apiKey === null) return;
   setupEditPoolDefaults();
   setupConfirmDialog();
@@ -116,7 +116,7 @@ async function init() {
 
 async function loadData() {
   try {
-    const res = await fetch('/api/v1/admin/tokens', {
+    const res = await fetch('/v1/admin/tokens', {
       headers: buildAuthHeaders(apiKey)
     });
     if (res.ok) {
@@ -536,7 +536,7 @@ async function syncToServer() {
   });
 
   try {
-    const res = await fetch('/api/v1/admin/tokens', {
+    const res = await fetch('/v1/admin/tokens', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -622,7 +622,7 @@ async function refreshStatus(token) {
       btn.innerHTML = `<svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>`;
     }
 
-    const res = await fetch('/api/v1/admin/tokens/refresh', {
+    const res = await fetch('/v1/admin/tokens/refresh', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -673,7 +673,7 @@ async function startBatchRefresh() {
   setActionButtonsState();
 
   try {
-    const res = await fetch('/api/v1/admin/tokens/refresh/async', {
+    const res = await fetch('/v1/admin/tokens/refresh/async', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1039,7 +1039,7 @@ async function batchEnableNSFW() {
 
   try {
     const tokens = selected.length > 0 ? selected.map(t => t.token) : null;
-    const res = await fetch('/api/v1/admin/tokens/nsfw/enable/async', {
+    const res = await fetch('/v1/admin/tokens/nsfw/enable/async', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -3,26 +3,26 @@ Grok image services.
 """
 
 import asyncio
+import base64
 import math
-import random
+import time
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, List, Optional, Union
+from pathlib import Path
+from typing import Any, AsyncGenerator, AsyncIterable, Dict, List, Optional, Union
+
+import orjson
 
 from app.core.config import get_config
 from app.core.logger import logger
-from app.services.grok.processors import (
-    ImageStreamProcessor,
-    ImageCollectProcessor,
-    ImageWSStreamProcessor,
-    ImageWSCollectProcessor,
-)
-from app.services.grok.services.chat import GrokChatService
+from app.core.storage import DATA_DIR
+from app.core.exceptions import AppException, ErrorType, UpstreamException
+from app.services.grok.utils.process import BaseProcessor
+from app.services.grok.utils.retry import pick_token, rate_limited
 from app.services.grok.utils.stream import wrap_stream_with_usage
 from app.services.token import EffortType
 from app.services.reverse.ws_imagine import ImagineWebSocketReverse
 
 
-ImageService = ImagineWebSocketReverse
 image_service = ImagineWebSocketReverse()
 
 
@@ -48,47 +48,114 @@ class ImageGenerationService:
         size: str,
         aspect_ratio: str,
         stream: bool,
-        use_ws: bool,
     ) -> ImageGenerationResult:
+        max_token_retries = int(get_config("retry.max_retry"))
+        tried_tokens: set[str] = set()
+        last_error: Optional[Exception] = None
+
         if stream:
-            if use_ws:
-                return await self._stream_ws(
+            async def _stream_retry() -> AsyncGenerator[str, None]:
+                nonlocal last_error
+                for attempt in range(max_token_retries):
+                    preferred = token if attempt == 0 else None
+                    current_token = await pick_token(
+                        token_mgr, model_info.model_id, tried_tokens, preferred=preferred
+                    )
+                    if not current_token:
+                        if last_error:
+                            raise last_error
+                        raise AppException(
+                            message="No available tokens. Please try again later.",
+                            error_type=ErrorType.RATE_LIMIT.value,
+                            code="rate_limit_exceeded",
+                            status_code=429,
+                        )
+
+                    tried_tokens.add(current_token)
+                    yielded = False
+                    try:
+                        result = await self._stream_ws(
+                            token_mgr=token_mgr,
+                            token=current_token,
+                            model_info=model_info,
+                            prompt=prompt,
+                            n=n,
+                            response_format=response_format,
+                            size=size,
+                            aspect_ratio=aspect_ratio,
+                        )
+                        async for chunk in result.data:
+                            yielded = True
+                            yield chunk
+                        return
+                    except UpstreamException as e:
+                        last_error = e
+                        if rate_limited(e):
+                            if yielded:
+                                raise
+                            await token_mgr.mark_rate_limited(current_token)
+                            logger.warning(
+                                f"Token {current_token[:10]}... rate limited (429), "
+                                f"trying next token (attempt {attempt + 1}/{max_token_retries})"
+                            )
+                            continue
+                        raise
+
+                if last_error:
+                    raise last_error
+                raise AppException(
+                    message="No available tokens. Please try again later.",
+                    error_type=ErrorType.RATE_LIMIT.value,
+                    code="rate_limit_exceeded",
+                    status_code=429,
+                )
+
+            return ImageGenerationResult(stream=True, data=_stream_retry())
+
+        for attempt in range(max_token_retries):
+            preferred = token if attempt == 0 else None
+            current_token = await pick_token(
+                token_mgr, model_info.model_id, tried_tokens, preferred=preferred
+            )
+            if not current_token:
+                if last_error:
+                    raise last_error
+                raise AppException(
+                    message="No available tokens. Please try again later.",
+                    error_type=ErrorType.RATE_LIMIT.value,
+                    code="rate_limit_exceeded",
+                    status_code=429,
+                )
+
+            tried_tokens.add(current_token)
+            try:
+                return await self._collect_ws(
                     token_mgr=token_mgr,
-                    token=token,
+                    token=current_token,
                     model_info=model_info,
                     prompt=prompt,
                     n=n,
                     response_format=response_format,
-                    size=size,
                     aspect_ratio=aspect_ratio,
                 )
-            return await self._stream_http(
-                token_mgr=token_mgr,
-                token=token,
-                model_info=model_info,
-                prompt=prompt,
-                n=n,
-                response_format=response_format,
-            )
+            except UpstreamException as e:
+                last_error = e
+                if rate_limited(e):
+                    await token_mgr.mark_rate_limited(current_token)
+                    logger.warning(
+                        f"Token {current_token[:10]}... rate limited (429), "
+                        f"trying next token (attempt {attempt + 1}/{max_token_retries})"
+                    )
+                    continue
+                raise
 
-        if use_ws:
-            return await self._collect_ws(
-                token_mgr=token_mgr,
-                token=token,
-                model_info=model_info,
-                prompt=prompt,
-                n=n,
-                response_format=response_format,
-                aspect_ratio=aspect_ratio,
-            )
-
-        return await self._collect_http(
-            token_mgr=token_mgr,
-            token=token,
-            model_info=model_info,
-            prompt=prompt,
-            n=n,
-            response_format=response_format,
+        if last_error:
+            raise last_error
+        raise AppException(
+            message="No available tokens. Please try again later.",
+            error_type=ErrorType.RATE_LIMIT.value,
+            code="rate_limit_exceeded",
+            status_code=429,
         )
 
     async def _stream_ws(
@@ -103,7 +170,7 @@ class ImageGenerationService:
         size: str,
         aspect_ratio: str,
     ) -> ImageGenerationResult:
-        enable_nsfw = bool(get_config("image.image_ws_nsfw"))
+        enable_nsfw = bool(get_config("image.nsfw"))
         upstream = image_service.stream(
             token=token,
             prompt=prompt,
@@ -126,37 +193,6 @@ class ImageGenerationService:
         )
         return ImageGenerationResult(stream=True, data=stream)
 
-    async def _stream_http(
-        self,
-        *,
-        token_mgr: Any,
-        token: str,
-        model_info: Any,
-        prompt: str,
-        n: int,
-        response_format: str,
-    ) -> ImageGenerationResult:
-        response = await GrokChatService().chat(
-            token=token,
-            message=f"Image Generation: {prompt}",
-            model=model_info.grok_model,
-            mode=model_info.model_mode,
-            stream=True,
-        )
-        processor = ImageStreamProcessor(
-            model_info.model_id,
-            token,
-            n=n,
-            response_format=response_format,
-        )
-        stream = wrap_stream_with_usage(
-            processor.process(response),
-            token_mgr,
-            token,
-            model_info.model_id,
-        )
-        return ImageGenerationResult(stream=True, data=stream)
-
     async def _collect_ws(
         self,
         *,
@@ -168,7 +204,7 @@ class ImageGenerationService:
         response_format: str,
         aspect_ratio: str,
     ) -> ImageGenerationResult:
-        enable_nsfw = bool(get_config("image.image_ws_nsfw"))
+        enable_nsfw = bool(get_config("image.nsfw"))
         all_images: List[str] = []
         seen = set()
         expected_per_call = 6
@@ -227,60 +263,6 @@ class ImageGenerationService:
             stream=False, data=selected, usage_override=usage_override
         )
 
-    async def _collect_http(
-        self,
-        *,
-        token_mgr: Any,
-        token: str,
-        model_info: Any,
-        prompt: str,
-        n: int,
-        response_format: str,
-    ) -> ImageGenerationResult:
-        calls_needed = (n + 1) // 2
-
-        async def _call_grok():
-            success = False
-            try:
-                response = await GrokChatService().chat(
-                    token=token,
-                    message=f"Image Generation: {prompt}",
-                    model=model_info.grok_model,
-                    mode=model_info.model_mode,
-                    stream=True,
-                )
-                processor = ImageCollectProcessor(
-                    model_info.model_id, token, response_format=response_format
-                )
-                images = await processor.process(response)
-                success = True
-                return images
-            except Exception as e:
-                logger.error(f"Grok image call failed: {e}")
-                return []
-            finally:
-                if success:
-                    try:
-                        await token_mgr.consume(token, self._get_effort(model_info))
-                    except Exception as e:
-                        logger.warning(f"Failed to consume token: {e}")
-
-        if calls_needed == 1:
-            all_images = await _call_grok()
-        else:
-            tasks = [_call_grok() for _ in range(calls_needed)]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            all_images: List[str] = []
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(f"Concurrent call failed: {result}")
-                elif isinstance(result, list):
-                    all_images.extend(result)
-
-        selected = self._select_images(all_images, n)
-        return ImageGenerationResult(stream=False, data=selected)
-
     @staticmethod
     def _get_effort(model_info: Any) -> EffortType:
         return (
@@ -292,16 +274,330 @@ class ImageGenerationService:
     @staticmethod
     def _select_images(images: List[str], n: int) -> List[str]:
         if len(images) >= n:
-            return random.sample(images, n)
+            return images[:n]
         selected = images.copy()
         while len(selected) < n:
             selected.append("error")
         return selected
 
 
-__all__ = [
-    "image_service",
-    "ImageService",
-    "ImageGenerationService",
-    "ImageGenerationResult",
-]
+class ImageWSBaseProcessor(BaseProcessor):
+    """WebSocket image processor base."""
+
+    def __init__(self, model: str, token: str = "", response_format: str = "b64_json"):
+        if response_format == "base64":
+            response_format = "b64_json"
+        super().__init__(model, token)
+        self.response_format = response_format
+        if response_format == "url":
+            self.response_field = "url"
+        elif response_format == "base64":
+            self.response_field = "base64"
+        else:
+            self.response_field = "b64_json"
+        self._image_dir: Optional[Path] = None
+
+    def _ensure_image_dir(self) -> Path:
+        if self._image_dir is None:
+            base_dir = DATA_DIR / "tmp" / "image"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            self._image_dir = base_dir
+        return self._image_dir
+
+    def _strip_base64(self, blob: str) -> str:
+        if not blob:
+            return ""
+        if "," in blob and "base64" in blob.split(",", 1)[0]:
+            return blob.split(",", 1)[1]
+        return blob
+
+    def _guess_ext(self, blob: str) -> Optional[str]:
+        if not blob:
+            return None
+        header = ""
+        data = blob
+        if "," in blob and "base64" in blob.split(",", 1)[0]:
+            header, data = blob.split(",", 1)
+        header = header.lower()
+        if "image/png" in header:
+            return "png"
+        if "image/jpeg" in header or "image/jpg" in header:
+            return "jpg"
+        if data.startswith("iVBORw0KGgo"):
+            return "png"
+        if data.startswith("/9j/"):
+            return "jpg"
+        return None
+
+    def _filename(self, image_id: str, is_final: bool, ext: Optional[str] = None) -> str:
+        if ext:
+            ext = ext.lower()
+            if ext == "jpeg":
+                ext = "jpg"
+        if not ext:
+            ext = "jpg" if is_final else "png"
+        return f"{image_id}.{ext}"
+
+    def _build_file_url(self, filename: str) -> str:
+        app_url = get_config("app.app_url")
+        if app_url:
+            return f"{app_url.rstrip('/')}/v1/files/image/{filename}"
+        return f"/v1/files/image/{filename}"
+
+    async def _save_blob(
+        self, image_id: str, blob: str, is_final: bool, ext: Optional[str] = None
+    ) -> str:
+        data = self._strip_base64(blob)
+        if not data:
+            return ""
+        image_dir = self._ensure_image_dir()
+        ext = ext or self._guess_ext(blob)
+        filename = self._filename(image_id, is_final, ext=ext)
+        filepath = image_dir / filename
+
+        def _write_file():
+            with open(filepath, "wb") as f:
+                f.write(base64.b64decode(data))
+
+        await asyncio.to_thread(_write_file)
+        return self._build_file_url(filename)
+
+    def _pick_best(self, existing: Optional[Dict], incoming: Dict) -> Dict:
+        if not existing:
+            return incoming
+        if incoming.get("is_final") and not existing.get("is_final"):
+            return incoming
+        if existing.get("is_final") and not incoming.get("is_final"):
+            return existing
+        if incoming.get("blob_size", 0) > existing.get("blob_size", 0):
+            return incoming
+        return existing
+
+    async def _to_output(self, image_id: str, item: Dict) -> str:
+        try:
+            if self.response_format == "url":
+                return await self._save_blob(
+                    image_id,
+                    item.get("blob", ""),
+                    item.get("is_final", False),
+                    ext=item.get("ext"),
+                )
+            return self._strip_base64(item.get("blob", ""))
+        except Exception as e:
+            logger.warning(f"Image output failed: {e}")
+            return ""
+
+
+class ImageWSStreamProcessor(ImageWSBaseProcessor):
+    """WebSocket image stream processor."""
+
+    def __init__(
+        self,
+        model: str,
+        token: str = "",
+        n: int = 1,
+        response_format: str = "b64_json",
+        size: str = "1024x1024",
+    ):
+        super().__init__(model, token, response_format)
+        self.n = n
+        self.size = size
+        self._target_id: Optional[str] = None
+        self._index_map: Dict[str, int] = {}
+        self._partial_map: Dict[str, int] = {}
+        self._initial_sent: set[str] = set()
+
+    def _assign_index(self, image_id: str) -> Optional[int]:
+        if image_id in self._index_map:
+            return self._index_map[image_id]
+        if len(self._index_map) >= self.n:
+            return None
+        self._index_map[image_id] = len(self._index_map)
+        return self._index_map[image_id]
+
+    def _sse(self, event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {orjson.dumps(data).decode()}\n\n"
+
+    async def process(self, response: AsyncIterable[dict]) -> AsyncGenerator[str, None]:
+        images: Dict[str, Dict] = {}
+
+        async for item in response:
+            if item.get("type") == "error":
+                message = item.get("error") or "Upstream error"
+                code = item.get("error_code") or "upstream_error"
+                status = item.get("status")
+                if code == "rate_limit_exceeded" or status == 429:
+                    raise UpstreamException(message, details=item)
+                yield self._sse(
+                    "error",
+                    {
+                        "error": {
+                            "message": message,
+                            "type": "server_error",
+                            "code": code,
+                        }
+                    },
+                )
+                return
+            if item.get("type") != "image":
+                continue
+
+            image_id = item.get("image_id")
+            if not image_id:
+                continue
+
+            if self.n == 1:
+                if self._target_id is None:
+                    self._target_id = image_id
+                index = 0 if image_id == self._target_id else None
+            else:
+                index = self._assign_index(image_id)
+
+            images[image_id] = self._pick_best(images.get(image_id), item)
+
+            if index is None:
+                continue
+
+            if item.get("stage") != "final":
+                if image_id not in self._initial_sent:
+                    self._initial_sent.add(image_id)
+                    stage = item.get("stage") or "preview"
+                    if stage == "medium":
+                        partial_index = 1
+                        self._partial_map[image_id] = 1
+                    else:
+                        partial_index = 0
+                        self._partial_map[image_id] = 0
+                else:
+                    stage = item.get("stage") or "partial"
+                    if stage == "preview":
+                        continue
+                    partial_index = self._partial_map.get(image_id, 0)
+                    if stage == "medium":
+                        partial_index = max(partial_index, 1)
+                    self._partial_map[image_id] = partial_index
+
+                if self.response_format == "url":
+                    partial_id = f"{image_id}-{stage}-{partial_index}"
+                    partial_out = await self._save_blob(
+                        partial_id,
+                        item.get("blob", ""),
+                        False,
+                        ext=item.get("ext"),
+                    )
+                else:
+                    partial_out = self._strip_base64(item.get("blob", ""))
+                if not partial_out:
+                    continue
+                yield self._sse(
+                    "image_generation.partial_image",
+                    {
+                        "type": "image_generation.partial_image",
+                        self.response_field: partial_out,
+                        "created_at": int(time.time()),
+                        "size": self.size,
+                        "index": index,
+                        "partial_image_index": partial_index,
+                    },
+                )
+
+        if self.n == 1:
+            if self._target_id and self._target_id in images:
+                selected = [(self._target_id, images[self._target_id])]
+            else:
+                selected = (
+                    [
+                        max(
+                            images.items(),
+                            key=lambda x: (
+                                x[1].get("is_final", False),
+                                x[1].get("blob_size", 0),
+                            ),
+                        )
+                    ]
+                    if images
+                    else []
+                )
+        else:
+            selected = [
+                (image_id, images[image_id])
+                for image_id in self._index_map
+                if image_id in images
+            ]
+
+        for image_id, item in selected:
+            if self.response_format == "url":
+                output = await self._save_blob(
+                    f"{image_id}-final",
+                    item.get("blob", ""),
+                    item.get("is_final", False),
+                    ext=item.get("ext"),
+                )
+            else:
+                output = await self._to_output(image_id, item)
+            if not output:
+                continue
+
+            if self.n == 1:
+                index = 0
+            else:
+                index = self._index_map.get(image_id, 0)
+            yield self._sse(
+                "image_generation.completed",
+                {
+                    "type": "image_generation.completed",
+                    self.response_field: output,
+                    "created_at": int(time.time()),
+                    "size": self.size,
+                    "index": index,
+                    "usage": {
+                        "total_tokens": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "input_tokens_details": {"text_tokens": 0, "image_tokens": 0},
+                    },
+                },
+            )
+
+
+class ImageWSCollectProcessor(ImageWSBaseProcessor):
+    """WebSocket image non-stream processor."""
+
+    def __init__(
+        self, model: str, token: str = "", n: int = 1, response_format: str = "b64_json"
+    ):
+        super().__init__(model, token, response_format)
+        self.n = n
+
+    async def process(self, response: AsyncIterable[dict]) -> List[str]:
+        images: Dict[str, Dict] = {}
+
+        async for item in response:
+            if item.get("type") == "error":
+                message = item.get("error") or "Upstream error"
+                raise UpstreamException(message, details=item)
+            if item.get("type") != "image":
+                continue
+            image_id = item.get("image_id")
+            if not image_id:
+                continue
+            images[image_id] = self._pick_best(images.get(image_id), item)
+
+        selected = sorted(
+            images.values(),
+            key=lambda x: (x.get("is_final", False), x.get("blob_size", 0)),
+            reverse=True,
+        )
+        if self.n:
+            selected = selected[: self.n]
+
+        results: List[str] = []
+        for item in selected:
+            output = await self._to_output(item.get("image_id", ""), item)
+            if output:
+                results.append(output)
+
+        return results
+
+
+__all__ = ["ImageGenerationService"]

@@ -136,7 +136,7 @@ class UploadService:
 
             lock_name = f"ul_url_{hashlib.sha1(url.encode()).hexdigest()[:16]}"
             timeout = float(get_config("asset.upload_timeout"))
-            proxy_url = get_config("network.base_proxy_url")
+            proxy_url = get_config("proxy.base_proxy_url")
             proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
 
             lock_timeout = max(1, int(get_config("asset.upload_timeout")))

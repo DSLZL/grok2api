@@ -6,46 +6,40 @@ app_url = "http://127.0.0.1:8000"
 app_key = "grok2api"
 # API 调用密钥（可选）
 api_key = ""
+# Public 调用密钥（可选）
+public_key = ""
+# 是否公开功能玩法（public 入口）
+public_enabled = false
 # 生成图片的格式（url 或 base64）
 image_format = "url"
 # 生成视频的格式（html 或 url）
 video_format = "html"
-
-
-# ==================== 网络配置 ====================
-[network]
-# 请求超时时间（秒）
-timeout = 120
-# 基础代理地址（代理到 Grok 官网）
-base_proxy_url = ""
-# 资源代理地址（代理静态资源如图片/视频）
-asset_proxy_url = ""
-
-
-# ==================== 反爬虫验证 ====================
-[security]
-# Cloudflare Clearance Cookie
-cf_clearance = ""
-# curl_cffi 浏览器指纹
-browser = "chrome136"
-# User-Agent 字符串
-user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-
-
-# ==================== 对话配置 ====================
-[chat]
 # 是否启用临时对话模式
 temporary = true
 # 是否禁用 Grok 记忆功能
 disable_memory = true
 # 是否默认启用流式响应
 stream = true
-# 是否启用思维链输出
+# 是否默认启用思维链输出
 thinking = true
 # 是否动态生成 Statsig 指纹
 dynamic_statsig = true
 # 过滤的特殊标签列表
 filter_tags = ["xaiartifact","xai:tool_usage_card","grok:render"]
+
+
+# ==================== 代理配置 ====================
+[proxy]
+# 基础代理地址（代理到 Grok 官网）
+base_proxy_url = ""
+# 资源代理地址（代理静态资源如图片/视频）
+asset_proxy_url = ""
+# Cloudflare Clearance Cookie
+cf_clearance = ""
+# curl_cffi 浏览器指纹
+browser = "chrome136"
+# User-Agent 字符串
+user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 
 
 # ==================== 重试策略 ====================
@@ -64,28 +58,6 @@ retry_backoff_max = 30.0
 retry_budget = 90.0
 
 
-# ==================== 超时配置 ====================
-[timeout]
-# 流式响应空闲超时（秒）
-stream_idle_timeout = 120.0
-# 视频生成空闲超时（秒）
-video_idle_timeout = 90.0
-
-
-# ==================== 图片生成 ====================
-[image]
-# 是否启用 WebSocket 直连生成图片
-image_ws = true
-# WebSocket 生成时是否启用 NSFW
-image_ws_nsfw = true
-# 收到中等质量图后等待最终图的超时秒数
-image_ws_blocked_seconds = 15
-# 判定为最终图的最小字节数
-image_ws_final_min_bytes = 100000
-# 判定为中等质量图的最小字节数
-image_ws_medium_min_bytes = 30000
-
-
 # ==================== Token 池管理 ====================
 [token]
 # 是否启用 Token 自动刷新
@@ -101,7 +73,6 @@ save_delay_ms = 500
 # 多 worker 状态同步间隔（秒）
 reload_interval_sec = 30
 
-
 # ==================== 缓存管理 ====================
 [cache]
 # 是否启用自动清理
@@ -109,7 +80,45 @@ enable_auto_clean = true
 # 缓存大小上限（MB）
 limit_mb = 1024
 
-# ==================== Asset ====================
+# ==================== 对话配置 ====================
+[chat]
+# Reverse 接口并发上限
+concurrent = 10
+# Reverse 接口超时时间（秒）
+timeout = 60
+# 流式空闲超时时间（秒）
+stream_timeout = 60
+
+# ==================== 图像配置 ====================
+[image]
+# WebSocket 请求超时时间（秒）
+timeout = 120
+# WebSocket 流式空闲超时时间（秒）
+stream_timeout = 120
+# 中等图后等待最终图的超时秒数
+final_timeout = 15
+# 是否启用 NSFW
+nsfw = true
+# 判定为中等质量图的最小字节数
+medium_min_bytes = 30000
+# 判定为最终图的最小字节数
+final_min_bytes = 100000
+
+# ==================== 视频配置 ====================
+[video]
+# Reverse 接口并发上限
+concurrent = 10
+# Reverse 接口超时时间（秒）
+timeout = 60
+# 流式空闲超时时间（秒）
+stream_timeout = 60
+
+# ==================== 语音配置 ====================
+[voice]
+# Voice 请求超时时间（秒）
+timeout = 120
+
+# ==================== 资产配置 ====================
 [asset]
 # 上传并发数
 upload_concurrent = 30
@@ -141,7 +150,7 @@ batch_size = 50
 # NSFW 请求超时时间（秒）
 timeout = 60
 
-# ==================== Usage ====================
+# ==================== 用量配置 ====================
 [usage]
 # Usage 批量开启并发上限
 concurrent = 10
@@ -149,10 +158,3 @@ concurrent = 10
 batch_size = 50
 # Usage 请求超时时间（秒）
 timeout = 60
-
-
-# ==================== 并发性能 ====================
-[performance]
-
-# Media 生成并发上限
-media_max_concurrent = 50

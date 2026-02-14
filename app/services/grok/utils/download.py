@@ -110,6 +110,17 @@ class DownloadService:
   <source id="mp4" src="{safe_video_url}" type="video/mp4">
 </video>'''
 
+    @staticmethod
+    def _is_url(value: str) -> bool:
+        """Check if the value is a URL."""
+        try:
+            parsed = urlparse(value)
+            return bool(
+                parsed.scheme and parsed.netloc and parsed.scheme in ["http", "https"]
+            )
+        except Exception:
+            return False
+
     async def parse_b64(self, file_path: str, token: str, media_type: str = "image") -> str:
         """Download and return data URI."""
         try:
@@ -229,51 +240,54 @@ class DownloadService:
 
         self._cleanup_running = True
         try:
-            async with _file_lock("cache_cleanup", timeout=5):
-                limit_mb = get_config("cache.limit_mb")
-                total_size = 0
-                all_files: List[Tuple[Path, float, int]] = []
+            try:
+                async with _file_lock("cache_cleanup", timeout=5):
+                    limit_mb = get_config("cache.limit_mb")
+                    total_size = 0
+                    all_files: List[Tuple[Path, float, int]] = []
 
-                for d in [self.image_dir, self.video_dir]:
-                    if d.exists():
-                        for f in d.glob("*"):
-                            if f.is_file():
-                                try:
-                                    stat = f.stat()
-                                    total_size += stat.st_size
-                                    all_files.append(
-                                        (f, stat.st_mtime, stat.st_size)
-                                    )
-                                except Exception:
-                                    pass
-                current_mb = total_size / 1024 / 1024
+                    for d in [self.image_dir, self.video_dir]:
+                        if d.exists():
+                            for f in d.glob("*"):
+                                if f.is_file():
+                                    try:
+                                        stat = f.stat()
+                                        total_size += stat.st_size
+                                        all_files.append(
+                                            (f, stat.st_mtime, stat.st_size)
+                                        )
+                                    except Exception:
+                                        pass
+                    current_mb = total_size / 1024 / 1024
 
-                if current_mb <= limit_mb:
-                    return
+                    if current_mb <= limit_mb:
+                        return
 
-                logger.info(
-                    f"Cache limit exceeded ({current_mb:.2f}MB > {limit_mb}MB), cleaning..."
-                )
-                all_files.sort(key=lambda x: x[1])
+                    logger.info(
+                        f"Cache limit exceeded ({current_mb:.2f}MB > {limit_mb}MB), cleaning..."
+                    )
+                    all_files.sort(key=lambda x: x[1])
 
-                deleted_count = 0
-                deleted_size = 0
-                target_mb = limit_mb * 0.8
+                    deleted_count = 0
+                    deleted_size = 0
+                    target_mb = limit_mb * 0.8
 
-                for f, _, size in all_files:
-                    try:
-                        f.unlink()
-                        deleted_count += 1
-                        deleted_size += size
-                        total_size -= size
-                        if (total_size / 1024 / 1024) <= target_mb:
-                            break
-                    except Exception:
-                        pass
+                    for f, _, size in all_files:
+                        try:
+                            f.unlink()
+                            deleted_count += 1
+                            deleted_size += size
+                            total_size -= size
+                            if (total_size / 1024 / 1024) <= target_mb:
+                                break
+                        except Exception:
+                            pass
 
-                logger.info(
-                    f"Cache cleanup: {deleted_count} files ({deleted_size / 1024 / 1024:.2f}MB)"
-                )
+                    logger.info(
+                        f"Cache cleanup: {deleted_count} files ({deleted_size / 1024 / 1024:.2f}MB)"
+                    )
+            except Exception as e:
+                logger.warning(f"Cache cleanup failed: {e}")
         finally:
             self._cleanup_running = False
 

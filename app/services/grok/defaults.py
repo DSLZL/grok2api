@@ -10,26 +10,36 @@ GROK_DEFAULTS = {
         "app_url": "",
         "app_key": "grok2api",
         "api_key": "",
+        "public_key": "",
+        "public_enabled": False,
         "image_format": "url",
         "video_format": "html",
+        "temporary": True,
+        "disable_memory": True,
+        "stream": True,
+        "thinking": True,
+        "dynamic_statsig": True,
+        "filter_tags": ["xaiartifact", "xai:tool_usage_card", "grok:render"],
     },
-    "network": {
-        "timeout": 120,
+    "proxy": {
         "base_proxy_url": "",
         "asset_proxy_url": "",
-    },
-    "security": {
         "cf_clearance": "",
         "browser": "chrome136",
         "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
     },
+    "voice": {
+        "timeout": 120,
+    },
     "chat": {
-        "temporary": True,
-        "disable_memory": True,
-        "stream": True,
-        "thinking": False,
-        "dynamic_statsig": True,
-        "filter_tags": ["grok:render", "xaiartifact", "xai:tool_usage_card"],
+        "concurrent": 10,
+        "timeout": 60,
+        "stream_timeout": 60,
+    },
+    "video": {
+        "concurrent": 10,
+        "timeout": 60,
+        "stream_timeout": 60,
     },
     "retry": {
         "max_retry": 3,
@@ -39,16 +49,13 @@ GROK_DEFAULTS = {
         "retry_backoff_max": 30.0,
         "retry_budget": 90.0,
     },
-    "timeout": {
-        "stream_idle_timeout": 45.0,
-        "video_idle_timeout": 90.0,
-    },
     "image": {
-        "image_ws": True,
-        "image_ws_nsfw": True,
-        "image_ws_blocked_seconds": 15,
-        "image_ws_final_min_bytes": 100000,
-        "image_ws_medium_min_bytes": 30000,
+        "timeout": 120,
+        "stream_timeout": 120,
+        "final_timeout": 15,
+        "nsfw": True,
+        "medium_min_bytes": 30000,
+        "final_min_bytes": 100000,
     },
     "token": {
         "auto_refresh": True,
@@ -83,9 +90,6 @@ GROK_DEFAULTS = {
         "concurrent": 10,
         "batch_size": 50,
         "timeout": 60,
-    },
-    "performance": {
-        "media_max_concurrent": 50,
     },
 }
 

@@ -44,7 +44,7 @@ class LivekitTokenReverse:
         """
         try:
             # Get proxies
-            base_proxy = get_config("network.base_proxy_url")
+            base_proxy = get_config("proxy.base_proxy_url")
             proxies = {"http": base_proxy, "https": base_proxy} if base_proxy else None
 
             # Build headers
@@ -72,8 +72,8 @@ class LivekitTokenReverse:
             }
 
             # Curl Config
-            timeout = get_config("network.timeout")
-            browser = get_config("security.browser")
+            timeout = get_config("voice.timeout")
+            browser = get_config("proxy.browser")
 
             async def _do_request():
                 response = await session.post(
@@ -164,7 +164,9 @@ class LivekitWebSocketReverse:
         ws_headers = build_ws_headers()
 
         try:
-            return await self._client.connect(url, headers=ws_headers)
+            return await self._client.connect(
+                url, headers=ws_headers, timeout=get_config("voice.timeout")
+            )
         except Exception as e:
             logger.error(f"LivekitWebSocketReverse: Connect failed, {e}")
             raise UpstreamException(

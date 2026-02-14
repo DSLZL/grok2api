@@ -31,7 +31,7 @@ class StatsigGenerator:
         Returns:
             Base64 encoded ID.
         """
-        dynamic = get_config("chat.dynamic_statsig")
+        dynamic = get_config("app.dynamic_statsig")
 
         # Dynamic Statsig ID
         if dynamic:

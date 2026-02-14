@@ -23,13 +23,11 @@ const NUMERIC_FIELDS = new Set([
   'delete_concurrent',
   'delete_timeout',
   'delete_batch_size',
-  'media_max_concurrent',
   'reload_interval_sec',
-  'stream_idle_timeout',
-  'video_idle_timeout',
-  'image_ws_blocked_seconds',
-  'image_ws_final_min_bytes',
-  'image_ws_medium_min_bytes',
+  'stream_timeout',
+  'final_timeout',
+  'final_min_bytes',
+  'medium_min_bytes',
   'concurrent',
   'batch_size'
 ]);
@@ -39,24 +37,11 @@ const LOCALE_MAP = {
     "label": "应用设置",
     "api_key": { title: "API 密钥", desc: "调用 Grok2API 服务的 Token（可选）。" },
     "app_key": { title: "后台密码", desc: "登录 Grok2API 管理后台的密码（必填）。" },
+    "public_key": { title: "Public Key", desc: "Public 接口访问密钥（可选）。" },
+    "public_enabled": { title: "公开功能玩法", desc: "开启后 public 入口可访问（public_key 为空时默认放开）。" },
     "app_url": { title: "应用地址", desc: "当前 Grok2API 服务的外部访问 URL，用于文件链接访问。" },
     "image_format": { title: "图片格式", desc: "生成的图片格式（url 或 base64）。" },
-    "video_format": { title: "视频格式", desc: "生成的视频格式（html 或 url，url 为处理后的链接）。" }
-  },
-  "network": {
-    "label": "网络配置",
-    "timeout": { title: "请求超时", desc: "请求 Grok 服务的超时时间（秒）。" },
-    "base_proxy_url": { title: "基础代理 URL", desc: "代理请求到 Grok 官网的基础服务地址。" },
-    "asset_proxy_url": { title: "资源代理 URL", desc: "代理请求到 Grok 官网的静态资源（图片/视频）地址。" }
-  },
-  "security": {
-    "label": "反爬虫验证",
-    "cf_clearance": { title: "CF Clearance", desc: "Cloudflare Clearance Cookie，用于绕过反爬虫验证。" },
-    "browser": { title: "浏览器指纹", desc: "curl_cffi 浏览器指纹标识（如 chrome136）。" },
-    "user_agent": { title: "User-Agent", desc: "HTTP 请求的 User-Agent 字符串，需与浏览器指纹匹配。" }
-  },
-  "chat": {
-    "label": "对话配置",
+    "video_format": { title: "视频格式", desc: "生成的视频格式（html 或 url，url 为处理后的链接）。" },
     "temporary": { title: "临时对话", desc: "是否启用临时对话模式。" },
     "disable_memory": { title: "禁用记忆", desc: "禁用 Grok 记忆功能，以防止响应中出现不相关上下文。" },
     "stream": { title: "流式响应", desc: "是否默认启用流式输出。" },
@@ -64,6 +49,18 @@ const LOCALE_MAP = {
     "dynamic_statsig": { title: "动态指纹", desc: "是否启用动态生成 Statsig 值。" },
     "filter_tags": { title: "过滤标签", desc: "自动过滤 Grok 响应中的特殊标签。" }
   },
+
+
+  "proxy": {
+    "label": "代理配置",
+    "base_proxy_url": { title: "基础代理 URL", desc: "代理请求到 Grok 官网的基础服务地址。" },
+    "asset_proxy_url": { title: "资源代理 URL", desc: "代理请求到 Grok 官网的静态资源（图片/视频）地址。" },
+    "cf_clearance": { title: "CF Clearance", desc: "Cloudflare Clearance Cookie，用于绕过反爬虫验证。" },
+    "browser": { title: "浏览器指纹", desc: "curl_cffi 浏览器指纹标识（如 chrome136）。" },
+    "user_agent": { title: "User-Agent", desc: "HTTP 请求的 User-Agent 字符串，需与浏览器指纹匹配。" }
+  },
+
+
   "retry": {
     "label": "重试策略",
     "max_retry": { title: "最大重试次数", desc: "请求 Grok 服务失败时的最大重试次数。" },
@@ -73,33 +70,35 @@ const LOCALE_MAP = {
     "retry_backoff_max": { title: "退避上限", desc: "单次重试等待的最大延迟（秒）。" },
     "retry_budget": { title: "退避预算", desc: "单次请求的最大重试总耗时（秒）。" }
   },
-  "timeout": {
-    "label": "超时配置",
-    "stream_idle_timeout": { title: "流空闲超时", desc: "流式响应空闲超时（秒），超过将断开。" },
-    "video_idle_timeout": { title: "视频空闲超时", desc: "视频生成空闲超时（秒），超过将断开。" }
+
+
+  "chat": {
+    "label": "对话配置",
+    "concurrent": { title: "并发上限", desc: "Reverse 接口并发上限。" },
+    "timeout": { title: "请求超时", desc: "Reverse 接口超时时间（秒）。" },
+    "stream_timeout": { title: "流空闲超时", desc: "流式空闲超时时间（秒）。" }
   },
+
+
+  "video": {
+    "label": "视频配置",
+    "concurrent": { title: "并发上限", desc: "Reverse 接口并发上限。" },
+    "timeout": { title: "请求超时", desc: "Reverse 接口超时时间（秒）。" },
+    "stream_timeout": { title: "流空闲超时", desc: "流式空闲超时时间（秒）。" }
+  },
+
+
   "image": {
-    "label": "图片生成",
-    "image_ws": { title: "WebSocket 生成", desc: "启用后 /v1/images/generations 走 WebSocket 直连。" },
-    "image_ws_nsfw": { title: "NSFW 模式", desc: "WebSocket 请求是否启用 NSFW。" },
-    "image_ws_blocked_seconds": { title: "Blocked 阈值", desc: "收到中等图后超过该秒数仍无最终图则判定 blocked。" },
-    "image_ws_final_min_bytes": { title: "最终图最小字节", desc: "判定最终图的最小字节数（通常 JPG > 100KB）。" },
-    "image_ws_medium_min_bytes": { title: "中等图最小字节", desc: "判定中等质量图的最小字节数。" }
+    "label": "图像配置",
+    "timeout": { title: "请求超时", desc: "WebSocket 请求超时时间（秒）。" },
+    "stream_timeout": { title: "流空闲超时", desc: "WebSocket 流式空闲超时时间（秒）。" },
+    "final_timeout": { title: "最终图超时", desc: "收到中等图后等待最终图的超时秒数。" },
+    "nsfw": { title: "NSFW 模式", desc: "WebSocket 请求是否启用 NSFW。" },
+    "medium_min_bytes": { title: "中等图最小字节", desc: "判定中等质量图的最小字节数。" },
+    "final_min_bytes": { title: "最终图最小字节", desc: "判定最终图的最小字节数（通常 JPG > 100KB）。" }
   },
-  "token": {
-    "label": "Token 池管理",
-    "auto_refresh": { title: "自动刷新", desc: "是否开启 Token 自动刷新机制。" },
-    "refresh_interval_hours": { title: "刷新间隔", desc: "普通 Token 刷新的时间间隔（小时）。" },
-    "super_refresh_interval_hours": { title: "Super 刷新间隔", desc: "Super Token 刷新的时间间隔（小时）。" },
-    "fail_threshold": { title: "失败阈值", desc: "单个 Token 连续失败多少次后被标记为不可用。" },
-    "save_delay_ms": { title: "保存延迟", desc: "Token 变更合并写入的延迟（毫秒）。" },
-    "reload_interval_sec": { title: "同步间隔", desc: "多 worker 场景下 Token 状态刷新间隔（秒）。" }
-  },
-  "cache": {
-    "label": "缓存管理",
-    "enable_auto_clean": { title: "自动清理", desc: "是否启用缓存自动清理，开启后按上限自动回收。" },
-    "limit_mb": { title: "清理阈值", desc: "缓存大小阈值（MB），超过阈值会触发清理。" }
-  },
+
+
   "asset": {
     "label": "资产配置",
     "upload_concurrent": { title: "上传并发", desc: "上传接口的最大并发数。推荐 30。" },
@@ -113,27 +112,51 @@ const LOCALE_MAP = {
     "delete_timeout": { title: "删除超时", desc: "资产删除接口超时时间（秒）。推荐 60。" },
     "delete_batch_size": { title: "删除批次大小", desc: "单次删除可处理的 Token 数量。推荐 10。" }
   },
+
+
+  "voice": {
+    "label": "语音配置",
+    "timeout": { title: "请求超时", desc: "Voice 请求超时时间（秒）。" }
+  },
+
+
+  "token": {
+    "label": "Token 池管理",
+    "auto_refresh": { title: "自动刷新", desc: "是否开启 Token 自动刷新机制。" },
+    "refresh_interval_hours": { title: "刷新间隔", desc: "普通 Token 刷新的时间间隔（小时）。" },
+    "super_refresh_interval_hours": { title: "Super 刷新间隔", desc: "Super Token 刷新的时间间隔（小时）。" },
+    "fail_threshold": { title: "失败阈值", desc: "单个 Token 连续失败多少次后被标记为不可用。" },
+    "save_delay_ms": { title: "保存延迟", desc: "Token 变更合并写入的延迟（毫秒）。" },
+    "reload_interval_sec": { title: "同步间隔", desc: "多 worker 场景下 Token 状态刷新间隔（秒）。" }
+  },
+
+
+  "cache": {
+    "label": "缓存管理",
+    "enable_auto_clean": { title: "自动清理", desc: "是否启用缓存自动清理，开启后按上限自动回收。" },
+    "limit_mb": { title: "清理阈值", desc: "缓存大小阈值（MB），超过阈值会触发清理。" }
+  },
+
+
   "nsfw": {
     "label": "NSFW 配置",
     "concurrent": { title: "并发上限", desc: "批量开启 NSFW 模式时的并发请求上限。推荐 10。" },
     "batch_size": { title: "批次大小", desc: "批量开启 NSFW 模式的单批处理数量。推荐 50。" },
     "timeout": { title: "请求超时", desc: "NSFW 开启相关请求的超时时间（秒）。推荐 60。" }
   },
+
+
   "usage": {
     "label": "Usage 配置",
     "concurrent": { title: "并发上限", desc: "批量刷新用量时的并发请求上限。推荐 10。" },
     "batch_size": { title: "批次大小", desc: "批量刷新用量的单批处理数量。推荐 50。" },
     "timeout": { title: "请求超时", desc: "用量查询接口的超时时间（秒）。推荐 60。" }
-  },
-  "performance": {
-    "label": "并发性能",
-    "media_max_concurrent": { title: "Media 并发上限", desc: "视频/媒体生成请求的并发上限。推荐 50。" }
   }
 };
 
 // 配置部分说明（可选）
 const SECTION_DESCRIPTIONS = {
-  "security": "配置不正确将导致 403 错误。服务首次请求 Grok 时的 IP 必须与获取 CF Clearance 时的 IP 一致，后续服务器请求 IP 变化不会导致 403。"
+  "proxy": "配置不正确将导致 403 错误。服务首次请求 Grok 时的 IP 必须与获取 CF Clearance 时的 IP 一致，后续服务器请求 IP 变化不会导致 403。"
 };
 
 const SECTION_ORDER = new Map(Object.keys(LOCALE_MAP).map((key, index) => [key, index]));
@@ -248,14 +271,14 @@ function buildSecretInput(section, key, val) {
 }
 
 async function init() {
-  apiKey = await ensureApiKey();
+  apiKey = await ensureAdminKey();
   if (apiKey === null) return;
   loadData();
 }
 
 async function loadData() {
   try {
-    const res = await fetch('/api/v1/admin/config', {
+    const res = await fetch('/v1/admin/config', {
       headers: buildAuthHeaders(apiKey)
     });
     if (res.ok) {
@@ -364,7 +387,7 @@ function buildFieldCard(section, key, val) {
     built = buildJsonInput(section, key, val);
   }
   else {
-    if (key === 'api_key' || key === 'app_key') {
+    if (key === 'api_key' || key === 'app_key' || key === 'public_key') {
       built = buildSecretInput(section, key, val);
     } else {
       built = buildTextInput(section, key, val);
@@ -412,7 +435,7 @@ async function saveConfig() {
       newConfig[s][k] = val;
     });
 
-    const res = await fetch('/api/v1/admin/config', {
+    const res = await fetch('/v1/admin/config', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

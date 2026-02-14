@@ -43,7 +43,7 @@ class NSFWService:
         batch_size = get_config("nsfw.batch_size")
         async def _enable(token: str):
             try:
-                browser = get_config("security.browser")
+                browser = get_config("proxy.browser")
                 async with AsyncSession(impersonate=browser) as session:
                     async def _record_fail(err: UpstreamException, reason: str):
                         status = None

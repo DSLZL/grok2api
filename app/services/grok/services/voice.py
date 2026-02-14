@@ -20,7 +20,7 @@ class VoiceService:
         personality: str = "assistant",
         speed: float = 1.0,
     ) -> Dict[str, Any]:
-        browser = get_config("security.browser")
+        browser = get_config("proxy.browser")
         async with AsyncSession(impersonate=browser) as session:
             response = await LivekitTokenReverse.request(
                 session,
