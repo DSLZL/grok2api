@@ -14,9 +14,11 @@ from app.services.token.models import (
     BASIC__DEFAULT_QUOTA,
     SUPER_DEFAULT_QUOTA,
 )
-from app.core.storage import get_storage
+from app.core.storage import get_storage, LocalStorage
 from app.core.config import get_config
+from app.core.exceptions import UpstreamException
 from app.services.token.pool import TokenPool
+from app.services.grok.batch_services.usage import UsageService
 
 
 DEFAULT_REFRESH_BATCH_SIZE = 10
@@ -70,8 +72,6 @@ class TokenManager:
 
                 # 如果后端返回 None 或空数据，尝试从本地 data/token.json 初始化后端
                 if not data:
-                    from app.core.storage import LocalStorage
-
                     local_storage = LocalStorage()
                     local_data = await local_storage.load_tokens()
                     if local_data:
@@ -299,6 +299,14 @@ class TokenManager:
         )
         return None
 
+    def get_pool_name_for_token(self, token_str: str) -> Optional[str]:
+        """Return pool name for the given token string."""
+        raw_token = token_str.replace("sso=", "")
+        for pool_name, pool in self.pools.items():
+            if pool.get(raw_token):
+                return pool_name
+        return None
+
     async def consume(
         self, token_str: str, effort: EffortType = EffortType.LOW
     ) -> bool:
@@ -330,7 +338,6 @@ class TokenManager:
     async def sync_usage(
         self,
         token_str: str,
-        model_name: str,
         fallback_effort: EffortType = EffortType.LOW,
         consume_on_fail: bool = True,
         is_usage: bool = True,
@@ -342,7 +349,6 @@ class TokenManager:
 
         Args:
             token_str: Token 字符串（可带 sso= 前缀）
-            model_name: 模型名称（用于 API 查询）
             fallback_effort: 降级时的消耗力度
             consume_on_fail: 失败时是否降级扣费
             is_usage: 是否记录为一次使用（影响 use_count）
@@ -365,10 +371,8 @@ class TokenManager:
 
         # 尝试 API 同步
         try:
-            from app.services.grok.services.usage import UsageService
-
             usage_service = UsageService()
-            result = await usage_service.get(token_str, model_name=model_name)
+            result = await usage_service.get(token_str)
 
             if result and "remainingTokens" in result:
                 old_quota = target_token.quota
@@ -387,6 +391,14 @@ class TokenManager:
                 return True
 
         except Exception as e:
+            if isinstance(e, UpstreamException):
+                status = None
+                if e.details and "status" in e.details:
+                    status = e.details["status"]
+                else:
+                    status = getattr(e, "status_code", None)
+                if status == 401:
+                    await self.record_fail(token_str, status, "rate_limits_auth_failed")
             logger.warning(
                 f"Token {raw_token[:10]}...: API sync failed, fallback to local ({e})"
             )
@@ -420,11 +432,19 @@ class TokenManager:
         for pool in self.pools.values():
             token = pool.get(raw_token)
             if token:
-                if status_code in (401, 403):
-                    token.record_fail(status_code, reason)
+                if status_code == 401:
+                    threshold = get_config("token.fail_threshold", FAIL_THRESHOLD)
+                    try:
+                        threshold = int(threshold)
+                    except (TypeError, ValueError):
+                        threshold = FAIL_THRESHOLD
+                    if threshold < 1:
+                        threshold = 1
+
+                    token.record_fail(status_code, reason, threshold=threshold)
                     logger.warning(
                         f"Token {raw_token[:10]}...: recorded {status_code} failure "
-                        f"({token.fail_count}/{FAIL_THRESHOLD}) - {reason}"
+                        f"({token.fail_count}/{threshold}) - {reason}"
                     )
                 else:
                     logger.info(
@@ -636,8 +656,6 @@ class TokenManager:
         Returns:
             {"checked": int, "refreshed": int, "recovered": int, "expired": int}
         """
-        from app.services.grok.services.usage import UsageService
-
         # 收集需要刷新的 token
         to_refresh: List[TokenInfo] = []
         for pool in self.pools.values():
@@ -678,7 +696,7 @@ class TokenManager:
                 # 重试逻辑：最多 2 次重试
                 for retry in range(3):  # 0, 1, 2
                     try:
-                        result = await usage_service.get(token_str, model_name="grok-3")
+                        result = await usage_service.get(token_str)
 
                         if result and "remainingTokens" in result:
                             new_quota = result["remainingTokens"]
