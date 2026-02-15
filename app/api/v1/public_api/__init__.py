@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.public.imagine import router as imagine_router
-from app.api.v1.public.video import router as video_router
-from app.api.v1.public.voice import router as voice_router
+from app.api.v1.public_api.imagine import router as imagine_router
+from app.api.v1.public_api.video import router as video_router
+from app.api.v1.public_api.voice import router as voice_router
 
 router = APIRouter()
 
