@@ -104,6 +104,7 @@ docker compose up -d
 | `grok-4.1-fast` | 1 | Basic/Super | Yes | Yes | - |
 | `grok-4.1-expert` | 4 | Basic/Super | Yes | Yes | - |
 | `grok-4.1-thinking` | 4 | Basic/Super | Yes | Yes | - |
+| `grok-4.20-beta` | 1 | Basic/Super | Yes | Yes | - |
 | `grok-imagine-1.0` | - | Basic/Super | - | Yes | - |
 | `grok-imagine-1.0-edit` | - | Basic/Super | - | Yes | - |
 | `grok-imagine-1.0-video` | - | Basic/Super | - | - | Yes |
