@@ -45,7 +45,6 @@ logs/
 *.log
 
 # Data
-app/data/tmp/*
 data/
 app/data/
 
