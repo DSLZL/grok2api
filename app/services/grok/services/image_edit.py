@@ -30,6 +30,7 @@ from app.services.grok.utils.process import (
 )
 from app.services.grok.utils.upload import UploadService
 from app.services.grok.utils.retry import pick_token, rate_limited
+from app.services.grok.utils.response import make_response_id, make_chat_chunk, wrap_image_content
 from app.services.grok.services.chat import GrokChatService
 from app.services.grok.services.video import VideoService
 from app.services.grok.utils.stream import wrap_stream_with_usage
@@ -342,25 +343,16 @@ class ImageStreamProcessor(BaseProcessor):
                     if self.chat_format:
                         # OpenAI ChatCompletion chunk format for partial
                         if not self._id_generated:
-                            self._response_id = f"chatcmpl-{int(time.time() * 1000)}{os.urandom(4).hex()}"
+                            self._response_id = make_response_id()
                             self._id_generated = True
                         yield self._sse(
                             "chat.completion.chunk",
-                            {
-                                "id": self._response_id,
-                                "object": "chat.completion.chunk",
-                                "created": int(time.time()),
-                                "model": self.model,
-                                "choices": [
-                                    {
-                                        "index": out_index,
-                                        "delta": {
-                                            "role": "assistant",
-                                            "content": "",
-                                        },
-                                    }
-                                ],
-                            },
+                            make_chat_chunk(
+                                self._response_id,
+                                self.model,
+                                "",
+                                index=out_index,
+                            ),
                         )
                     else:
                         yield self._sse(
@@ -414,44 +406,23 @@ class ImageStreamProcessor(BaseProcessor):
                 # Wrap in markdown format for chat
                 output = img_data
                 if self.chat_format and output:
-                    if self.response_format == "url":
-                        output = f"![image]({img_data})"
-                    else:
-                        output = f"![image](data:image/png;base64,{img_data})"
+                    output = wrap_image_content(output, self.response_format)
 
                 if not self._id_generated:
-                    self._response_id = f"chatcmpl-{int(time.time() * 1000)}{os.urandom(4).hex()}"
+                    self._response_id = make_response_id()
                     self._id_generated = True
 
                 if self.chat_format:
                     # OpenAI ChatCompletion chunk format
                     yield self._sse(
                         "chat.completion.chunk",
-                        {
-                            "id": self._response_id,
-                            "object": "chat.completion.chunk",
-                            "created": int(time.time()),
-                            "model": self.model,
-                            "choices": [
-                                {
-                                    "index": out_index,
-                                    "delta": {
-                                        "role": "assistant",
-                                        "content": output,
-                                    },
-                                    "finish_reason": "stop",
-                                }
-                            ],
-                            "usage": {
-                                "total_tokens": 0,
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "input_tokens_details": {
-                                    "text_tokens": 0,
-                                    "image_tokens": 0,
-                                },
-                            },
-                        },
+                        make_chat_chunk(
+                            self._response_id,
+                            self.model,
+                            output,
+                            index=out_index,
+                            is_final=True,
+                        ),
                     )
                 else:
                     # Original image_generation format

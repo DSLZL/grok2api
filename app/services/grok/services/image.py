@@ -18,6 +18,7 @@ from app.core.storage import DATA_DIR
 from app.core.exceptions import AppException, ErrorType, UpstreamException
 from app.services.grok.utils.process import BaseProcessor
 from app.services.grok.utils.retry import pick_token, rate_limited
+from app.services.grok.utils.response import make_response_id, make_chat_chunk, wrap_image_content
 from app.services.grok.utils.stream import wrap_stream_with_usage
 from app.services.token import EffortType
 from app.services.reverse.ws_imagine import ImagineWebSocketReverse
@@ -422,11 +423,6 @@ class ImageWSStreamProcessor(ImageWSBaseProcessor):
         self._id_generated: bool = False
         self._response_id: str = ""
 
-    def _make_id(self) -> str:
-        """Generate a unique ID for the response."""
-        import os
-        return f"{int(time.time() * 1000)}{os.urandom(4).hex()}"
-
     def _assign_index(self, image_id: str) -> Optional[int]:
         if image_id in self._index_map:
             return self._index_map[image_id]
@@ -505,37 +501,28 @@ class ImageWSStreamProcessor(ImageWSBaseProcessor):
                         False,
                         ext=item.get("ext"),
                     )
-                    if self.chat_format and partial_out:
-                        partial_out = f"![image]({partial_out})"
                 else:
                     partial_out = self._strip_base64(item.get("blob", ""))
-                    if self.chat_format and partial_out:
-                        partial_out = f"![image](data:image/png;base64,{partial_out})"
+
+                if self.chat_format and partial_out:
+                    partial_out = wrap_image_content(partial_out, self.response_format)
+
                 if not partial_out:
                     continue
 
                 if self.chat_format:
                     # OpenAI ChatCompletion chunk format for partial
                     if not self._id_generated:
-                        self._response_id = f"chatcmpl-{self._make_id()}"
+                        self._response_id = make_response_id()
                         self._id_generated = True
                     yield self._sse(
                         "chat.completion.chunk",
-                        {
-                            "id": self._response_id,
-                            "object": "chat.completion.chunk",
-                            "created": int(time.time()),
-                            "model": self.model,
-                            "choices": [
-                                {
-                                    "index": index,
-                                    "delta": {
-                                        "role": "assistant",
-                                        "content": partial_out,
-                                    },
-                                }
-                            ],
-                        },
+                        make_chat_chunk(
+                            self._response_id,
+                            self.model,
+                            partial_out,
+                            index=index,
+                        ),
                     )
                 else:
                     # Original image_generation format
@@ -586,12 +573,12 @@ class ImageWSStreamProcessor(ImageWSBaseProcessor):
                     ext=item.get("ext"),
                 )
                 if self.chat_format and output:
-                    output = f"![image]({output})"
+                    output = wrap_image_content(output, self.response_format)
             else:
                 output = await self._to_output(image_id, item)
                 if self.chat_format and output:
-                    # Convert base64 to data URL
-                    output = f"![image](data:image/png;base64,{output})"
+                    output = wrap_image_content(output, self.response_format)
+
             if not output:
                 continue
 
@@ -601,35 +588,20 @@ class ImageWSStreamProcessor(ImageWSBaseProcessor):
                 index = self._index_map.get(image_id, 0)
 
             if not self._id_generated:
-                self._response_id = f"chatcmpl-{self._make_id()}"
+                self._response_id = make_response_id()
                 self._id_generated = True
 
             if self.chat_format:
                 # OpenAI ChatCompletion chunk format
                 yield self._sse(
                     "chat.completion.chunk",
-                    {
-                        "id": self._response_id,
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": self.model,
-                        "choices": [
-                            {
-                                "index": index,
-                                "delta": {
-                                    "role": "assistant",
-                                    "content": output,
-                                },
-                                "finish_reason": "stop",
-                            }
-                        ],
-                        "usage": {
-                            "total_tokens": 0,
-                            "input_tokens": 0,
-                            "output_tokens": 0,
-                            "input_tokens_details": {"text_tokens": 0, "image_tokens": 0},
-                        },
-                    },
+                    make_chat_chunk(
+                        self._response_id,
+                        self.model,
+                        output,
+                        index=index,
+                        is_final=True,
+                    ),
                 )
             else:
                 # Original image_generation format

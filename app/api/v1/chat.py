@@ -17,6 +17,7 @@ from app.services.grok.services.image import ImageGenerationService
 from app.services.grok.services.image_edit import ImageEditService
 from app.services.grok.services.model import ModelService
 from app.services.grok.services.video import VideoService
+from app.services.grok.utils.response import make_chat_response
 from app.services.token import get_token_manager
 from app.core.config import get_config
 from app.core.exceptions import ValidationException, AppException, ErrorType
@@ -568,31 +569,9 @@ async def chat_completions(request: ChatCompletionRequest):
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
 
-        data = [{response_field: img} for img in result.data]
+        content = result.data[0] if result.data else ""
         return JSONResponse(
-            content={
-                "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": request.model,
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": data[0].get(response_field, "") if data else "",
-                            "refusal": None,
-                        },
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {
-                    "total_tokens": 0,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "input_tokens_details": {"text_tokens": 0, "image_tokens": 0},
-                },
-            }
+            content=make_chat_response(request.model, content)
         )
 
     if model_info and model_info.is_image:
@@ -653,32 +632,10 @@ async def chat_completions(request: ChatCompletionRequest):
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
 
-        data = [{response_field: img} for img in result.data]
-        usage = result.usage_override or {
-            "total_tokens": 0,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "input_tokens_details": {"text_tokens": 0, "image_tokens": 0},
-        }
+        content = result.data[0] if result.data else ""
+        usage = result.usage_override
         return JSONResponse(
-            content={
-                "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": request.model,
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": data[0].get(response_field, "") if data else "",
-                            "refusal": None,
-                        },
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": usage,
-            }
+            content=make_chat_response(request.model, content, usage=usage)
         )
 
     if model_info and model_info.is_video:
