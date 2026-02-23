@@ -118,6 +118,28 @@ class MessageExtractor:
             if isinstance(content, str):
                 if content.strip():
                     parts.append(content)
+            elif isinstance(content, dict):
+                content = [content]
+                for item in content:
+                    item_type = item.get("type", "")
+                    if item_type == "text":
+                        if text := item.get("text", "").strip():
+                            parts.append(text)
+                    elif item_type == "image_url":
+                        image_data = item.get("image_url", {})
+                        url = image_data.get("url", "")
+                        if url:
+                            image_attachments.append(url)
+                    elif item_type == "input_audio":
+                        audio_data = item.get("input_audio", {})
+                        data = audio_data.get("data", "")
+                        if data:
+                            file_attachments.append(data)
+                    elif item_type == "file":
+                        file_data = item.get("file", {})
+                        raw = file_data.get("file_data", "")
+                        if raw:
+                            file_attachments.append(raw)
             elif isinstance(content, list):
                 for item in content:
                     item_type = item.get("type", "")
@@ -783,20 +805,38 @@ class CollectProcessor(proc_base.BaseProcessor):
 
         except asyncio.CancelledError:
             logger.debug("Collect cancelled by client", extra={"model": self.model})
+            raise
         except StreamIdleTimeoutError as e:
             logger.warning(f"Collect idle timeout: {e}", extra={"model": self.model})
+            raise UpstreamException(
+                message=f"Collect stream idle timeout after {e.idle_seconds}s",
+                details={
+                    "error": str(e),
+                    "type": "stream_idle_timeout",
+                    "idle_seconds": e.idle_seconds,
+                    "status": 504,
+                },
+            )
         except RequestsError as e:
             if proc_base._is_http2_error(e):
                 logger.warning(
                     f"HTTP/2 stream error in collect: {e}", extra={"model": self.model}
                 )
-            else:
-                logger.error(f"Collect request error: {e}", extra={"model": self.model})
+                raise UpstreamException(
+                    message="Upstream connection closed unexpectedly",
+                    details={"error": str(e), "type": "http2_stream_error", "status": 502},
+                )
+            logger.error(f"Collect request error: {e}", extra={"model": self.model})
+            raise UpstreamException(
+                message=f"Upstream request failed: {e}",
+                details={"error": str(e), "status": 502},
+            )
         except Exception as e:
             logger.error(
                 f"Collect processing error: {e}",
                 extra={"model": self.model, "error_type": type(e).__name__},
             )
+            raise
         finally:
             await self.close()
 
