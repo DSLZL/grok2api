@@ -123,11 +123,12 @@ class AppChatReverse:
             )
 
             # Curl Config
-            timeout = max(
-                float(get_config("chat.timeout") or 0),
-                float(get_config("video.timeout") or 0),
-                float(get_config("image.timeout") or 0),
-            )
+            timeout = float(get_config("chat.timeout") or 0)
+            if timeout <= 0:
+                timeout = max(
+                    float(get_config("video.timeout") or 0),
+                    float(get_config("image.timeout") or 0),
+                )
             browser = get_config("proxy.browser")
 
             async def _do_request():
