@@ -22,7 +22,7 @@ from app.core.exceptions import (
 from app.services.grok.services.model import ModelService
 from app.services.grok.utils.upload import UploadService
 from app.services.grok.utils import process as proc_base
-from app.services.grok.utils.retry import pick_token, rate_limited
+from app.services.grok.utils.retry import pick_token, rate_limited, transient_upstream
 from app.services.reverse.app_chat import AppChatReverse
 from app.services.reverse.utils.session import ResettableSession
 from app.services.grok.utils.stream import wrap_stream_with_usage
@@ -478,6 +478,13 @@ class ChatService:
                     logger.warning(
                         f"Token {token[:10]}... rate limited (429), "
                         f"trying next token (attempt {attempt + 1}/{max_token_retries})"
+                    )
+                    continue
+
+                if transient_upstream(e):
+                    logger.warning(
+                        f"Transient upstream error for token {token[:10]}..., "
+                        f"trying next token (attempt {attempt + 1}/{max_token_retries}): {e}"
                     )
                     continue
 
