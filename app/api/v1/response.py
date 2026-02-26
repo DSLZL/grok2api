@@ -32,7 +32,6 @@ class ResponseCreateRequest(BaseModel):
     store: Optional[bool] = Field(None, description="Store response")
     previous_response_id: Optional[str] = Field(None, description="Previous response id")
     truncation: Optional[str] = Field(None, description="Truncation behavior")
-    text: Optional[Dict[str, Any]] = Field(None, description="Text format settings")
 
     class Config:
         extra = "allow"
@@ -67,7 +66,6 @@ async def create_response(request: ResponseCreateRequest):
         store=request.store,
         previous_response_id=request.previous_response_id,
         truncation=request.truncation,
-        text_format=request.text,
     )
 
     if request.stream:

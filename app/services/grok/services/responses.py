@@ -47,36 +47,6 @@ def _new_function_call_id() -> str:
     return f"fc_{uuid.uuid4().hex[:24]}"
 
 
-def _extract_text_format(text_format: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if not isinstance(text_format, dict):
-        return None
-    if isinstance(text_format.get("format"), dict):
-        return text_format["format"]
-    if "type" in text_format:
-        return text_format
-    return None
-
-
-def _build_text_format_instruction(text_format: Optional[Dict[str, Any]]) -> str:
-    fmt = _extract_text_format(text_format)
-    if not fmt:
-        return ""
-    fmt_type = fmt.get("type")
-    if fmt_type == "json_schema":
-        schema = fmt.get("schema") or {}
-        strict = bool(fmt.get("strict"))
-        schema_str = orjson.dumps(schema).decode()
-        strict_note = "Do not include any properties not defined in the schema." if strict else ""
-        return (
-            "Respond ONLY with valid JSON that matches the schema below. "
-            "Do not wrap in markdown or add extra text. "
-            f"{strict_note}\nSchema:\n{schema_str}"
-        )
-    if fmt_type == "json_object":
-        return "Respond ONLY with a valid JSON object. Do not wrap in markdown or add extra text."
-    return ""
-
-
 def _normalize_tool_choice(tool_choice: Any) -> Any:
     if isinstance(tool_choice, dict):
         t_type = tool_choice.get("type")
@@ -351,7 +321,6 @@ def _build_response_object(
     reasoning_effort: Optional[str] = None,
     store: Optional[bool] = None,
     temperature: Optional[float] = None,
-    text_format: Optional[Dict[str, Any]] = None,
     tool_choice: Optional[Any] = None,
     tools: Optional[List[Dict[str, Any]]] = None,
     top_p: Optional[float] = None,
@@ -389,7 +358,7 @@ def _build_response_object(
         "reasoning": {"effort": reasoning_effort, "summary": None},
         "store": True if store is None else store,
         "temperature": 1.0 if temperature is None else temperature,
-        "text": text_format or {"format": {"type": "text"}},
+        "text": {"format": {"type": "text"}},
         "tool_choice": tool_choice or "auto",
         "tools": tools or [],
         "top_p": 1.0 if top_p is None else top_p,
@@ -414,7 +383,6 @@ class ResponseStreamAdapter:
         reasoning_effort: Optional[str],
         store: Optional[bool],
         temperature: Optional[float],
-        text_format: Optional[Dict[str, Any]],
         tool_choice: Optional[Any],
         tools: Optional[List[Dict[str, Any]]],
         top_p: Optional[float],
@@ -432,7 +400,6 @@ class ResponseStreamAdapter:
         self.reasoning_effort = reasoning_effort
         self.store = store
         self.temperature = temperature
-        self.text_format = text_format
         self.tool_choice = tool_choice
         self.tools = tools
         self.top_p = top_p
@@ -474,7 +441,6 @@ class ResponseStreamAdapter:
             reasoning_effort=self.reasoning_effort,
             store=self.store,
             temperature=self.temperature,
-            text_format=self.text_format,
             tool_choice=self.tool_choice,
             tools=self.tools,
             top_p=self.top_p,
@@ -718,15 +684,7 @@ class ResponsesService:
         store: Optional[bool] = None,
         previous_response_id: Optional[str] = None,
         truncation: Optional[str] = None,
-        text_format: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        format_instruction = _build_text_format_instruction(text_format)
-        if format_instruction:
-            if instructions:
-                instructions = f"{instructions}\n\n{format_instruction}"
-            else:
-                instructions = format_instruction
-
         messages = _coerce_input_to_messages(input_value)
         if instructions:
             messages = [{"role": "system", "content": instructions}] + messages
@@ -778,7 +736,6 @@ class ResponsesService:
                 reasoning_effort=reasoning_effort,
                 store=store,
                 temperature=temperature,
-                text_format=text_format,
                 tool_choice=tool_choice,
                 tools=tools,
                 top_p=top_p,
@@ -803,7 +760,6 @@ class ResponsesService:
             reasoning_effort=reasoning_effort,
             store=store,
             temperature=temperature,
-            text_format=text_format,
             tool_choice=tool_choice,
             tools=tools,
             top_p=top_p,
