@@ -103,6 +103,8 @@ timeout = 60
 stream_timeout = 60
 # 中等图后等待最终图的超时秒数
 final_timeout = 15
+# 判定疑似被审查时的宽限秒数（默认 10 秒，可自定义）
+blocked_grace_seconds = 10
 # 是否启用 NSFW
 nsfw = true
 # 判定为中等质量图的最小字节数

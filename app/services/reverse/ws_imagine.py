@@ -181,7 +181,9 @@ class ImagineWebSocketReverse:
         timeout = float(get_config("image.timeout"))
         stream_timeout = float(get_config("image.stream_timeout"))
         final_timeout = float(get_config("image.final_timeout"))
-        blocked_grace = min(10.0, final_timeout)
+        blocked_grace_cfg = get_config("image.blocked_grace_seconds")
+        blocked_grace = float(blocked_grace_cfg) if blocked_grace_cfg is not None else 10.0
+        blocked_grace = max(1.0, min(blocked_grace, final_timeout))
         final_min_bytes = int(get_config("image.final_min_bytes"))
         medium_min_bytes = int(get_config("image.medium_min_bytes"))
 

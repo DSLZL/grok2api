@@ -365,6 +365,7 @@ curl http://localhost:8000/v1/images/edits \
 | **image** | `timeout` | 请求超时 | WebSocket 请求超时时间（秒）。 | `120` |
 |  | `stream_timeout` | 流空闲超时 | WebSocket 流式空闲超时时间（秒）。 | `120` |
 |  | `final_timeout` | 最终图超时 | 收到中等图后等待最终图的超时秒数。 | `15` |
+|  | `blocked_grace_seconds` | 审查宽限秒数 | 收到中等图后，判定疑似被审查的宽限秒数。 | `10` |
 |  | `nsfw` | NSFW 模式 | WebSocket 请求是否启用 NSFW。 | `true` |
 |  | `medium_min_bytes` | 中等图最小字节 | 判定中等质量图的最小字节数。 | `30000` |
 |  | `final_min_bytes` | 最终图最小字节 | 判定最终图的最小字节数（通常 JPG > 100KB）。 | `100000` |
