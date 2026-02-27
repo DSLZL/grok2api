@@ -103,6 +103,8 @@ timeout = 60
 stream_timeout = 60
 # 中等图后等待最终图的超时秒数
 final_timeout = 15
+# blocked / 无最终图时，WebSocket 请求重试次数
+ws_retries = 2
 # 是否启用 NSFW
 nsfw = true
 # 判定为中等质量图的最小字节数
