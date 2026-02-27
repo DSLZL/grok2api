@@ -138,6 +138,7 @@ class ImageGenerationService:
                     token_mgr=token_mgr,
                     token=current_token,
                     model_info=model_info,
+                    tried_tokens=tried_tokens,
                     prompt=prompt,
                     n=n,
                     response_format=response_format,
@@ -212,6 +213,7 @@ class ImageGenerationService:
         token_mgr: Any,
         token: str,
         model_info: Any,
+        tried_tokens: set[str],
         prompt: str,
         n: int,
         response_format: str,
@@ -226,9 +228,9 @@ class ImageGenerationService:
         calls_needed = max(1, int(math.ceil(n / expected_per_call)))
         calls_needed = min(calls_needed, n)
 
-        async def _fetch_batch(call_target: int):
+        async def _fetch_batch(call_target: int, call_token: str):
             upstream = image_service.stream(
-                token=token,
+                token=call_token,
                 prompt=prompt,
                 aspect_ratio=aspect_ratio,
                 n=call_target,
@@ -246,7 +248,7 @@ class ImageGenerationService:
         for i in range(calls_needed):
             remaining = n - (i * expected_per_call)
             call_target = min(expected_per_call, remaining)
-            tasks.append(_fetch_batch(call_target))
+            tasks.append(_fetch_batch(call_target, token))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for batch in results:
@@ -268,16 +270,47 @@ class ImageGenerationService:
             remaining = n - len(all_images)
             extra_attempts = int(get_config("image.blocked_parallel_attempts") or 5)
             extra_attempts = max(0, min(extra_attempts, 10))
+            parallel_enabled = bool(get_config("image.blocked_parallel_enabled", True))
             if extra_attempts > 0:
                 logger.warning(
                     f"Image finals insufficient ({len(all_images)}/{n}), running "
-                    f"{extra_attempts} parallel recovery attempts for remaining={remaining}"
+                    f"{extra_attempts} recovery attempts for remaining={remaining}, "
+                    f"parallel_enabled={parallel_enabled}"
                 )
-                extra_tasks = [
-                    _fetch_batch(min(expected_per_call, remaining))
-                    for _ in range(extra_attempts)
-                ]
-                extra_results = await asyncio.gather(*extra_tasks, return_exceptions=True)
+                extra_tasks = []
+                if parallel_enabled:
+                    recovery_tried = set(tried_tokens)
+                    recovery_tokens: List[str] = []
+                    for _ in range(extra_attempts):
+                        recovery_token = await pick_token(
+                            token_mgr,
+                            model_info.model_id,
+                            recovery_tried,
+                        )
+                        if not recovery_token:
+                            break
+                        recovery_tried.add(recovery_token)
+                        recovery_tokens.append(recovery_token)
+
+                    if recovery_tokens:
+                        logger.info(
+                            f"Recovery using {len(recovery_tokens)} distinct tokens"
+                        )
+                    for recovery_token in recovery_tokens:
+                        extra_tasks.append(
+                            _fetch_batch(min(expected_per_call, remaining), recovery_token)
+                        )
+                else:
+                    extra_tasks = [
+                        _fetch_batch(min(expected_per_call, remaining), token)
+                        for _ in range(extra_attempts)
+                    ]
+
+                if not extra_tasks:
+                    logger.warning("No tokens available for recovery attempts")
+                    extra_results = []
+                else:
+                    extra_results = await asyncio.gather(*extra_tasks, return_exceptions=True)
                 for batch in extra_results:
                     if isinstance(batch, Exception):
                         logger.warning(f"WS recovery batch failed: {batch}")

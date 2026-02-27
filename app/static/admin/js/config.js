@@ -98,6 +98,7 @@ const LOCALE_MAP = {
     "nsfw": { title: "NSFW 模式", desc: "WebSocket 请求是否启用 NSFW。" },
     "medium_min_bytes": { title: "中等图最小字节", desc: "判定中等质量图的最小字节数。" },
     "final_min_bytes": { title: "最终图最小字节", desc: "判定最终图的最小字节数（通常 JPG > 100KB）。" },
+    "blocked_parallel_enabled": { title: "启用并行补偿", desc: "疑似审查/拦截时，是否启用并行补偿生成。" },
     "blocked_parallel_attempts": { title: "拦截补偿并发次数", desc: "疑似审查/拦截导致无最终图时，自动并行补偿生成次数。" }
   },
 

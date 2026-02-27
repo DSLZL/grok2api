@@ -111,6 +111,8 @@ medium_min_bytes = 30000
 final_min_bytes = 100000
 # 遇到疑似审查/拦截时的并行补偿生成次数
 blocked_parallel_attempts = 5
+# 是否启用并行补偿（启用时优先使用不同 token）
+blocked_parallel_enabled = true
 
 
 # ==================== SuperImage 配置 ====================
