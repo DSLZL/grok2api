@@ -629,21 +629,21 @@ class ImageWSStreamProcessor(ImageWSBaseProcessor):
                     )
 
         if self.n == 1:
-            if (
-                self._target_id
-                and self._target_id in images
-                and images[self._target_id].get("is_final", False)
-            ):
-                selected = [(self._target_id, images[self._target_id])]
-            else:
-                final_candidates = [
-                    item for item in images.items() if item[1].get("is_final", False)
+            target_item = images.get(self._target_id) if self._target_id else None
+            if target_item and target_item.get("is_final", False):
+                selected = [(self._target_id, target_item)]
+            elif images:
+                selected = [
+                    max(
+                        images.items(),
+                        key=lambda x: (
+                            x[1].get("is_final", False),
+                            x[1].get("blob_size", 0),
+                        ),
+                    )
                 ]
-                selected = (
-                    [max(final_candidates, key=lambda x: x[1].get("blob_size", 0))]
-                    if final_candidates
-                    else []
-                )
+            else:
+                selected = []
         else:
             selected = [
                 (image_id, images[image_id])
