@@ -46,3 +46,5 @@
 - 2026-03-02 Task9: 页面 404 根因确认是 internal/http/router.go 仅在 RouterOptions.Config 非空时注册 pages，修复点集中在 internal/app/app.go 为 NewRouter 注入 config manager。
 - 2026-03-02 Task9: 通过 --config 注入最小 [app].public_enabled 即可驱动页面语义：'/' 重定向目标、public 页面 404/200 分支与 /admin* 可达性均与 Python 对齐。
 - 2026-03-02 Task9: parity 静态资源探针改为 /static/public/pages/login.html（仓库存在文件），避免历史路径不存在导致误判 static mount 差异。
+
+- 2026-03-02 Task9收尾: QA evidence 文件统一补齐 command/exit_code/status 字段，证据格式改为可机读并可追溯执行命令。

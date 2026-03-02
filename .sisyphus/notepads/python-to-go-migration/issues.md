@@ -17,3 +17,5 @@
 
 - 2026-03-02 Task9: 首次 parity 失败是端口冲突（Go 默认 8000 与 Python 冲突）导致 go 端全量 connection refused；改为 SERVER_PORT=19000 启动后恢复可比对。
 - 2026-03-02 Task9: QA 404 场景需要切换 public_enabled，运行态缺省无 data/config.toml 时必须使用 --config 指向临时 TOML 文件保障场景可重复。
+
+- 2026-03-02 Task9收尾: 生成 QA 证据时若 public_enabled=true 仍出现 '/admin/login'，通常是旧进程或配置未切换导致；需 kill 旧 go 进程后带 --config 重启再采样。

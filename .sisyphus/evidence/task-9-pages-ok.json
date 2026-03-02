@@ -1,6 +1,9 @@
 {
   "scenario": "happy_path_pages_and_static",
   "base": "http://127.0.0.1:19000",
+  "command": "SERVER_PORT=19000 go run ./cmd/server --config .sisyphus/evidence/task-9-public-true.toml",
+  "exit_code": 0,
+  "status": "pass",
   "checks": {
     "root": {
       "status": 307,
@@ -10,6 +13,5 @@
       "status": 200,
       "content_type": "text/html; charset=utf-8"
     }
-  },
-  "pass": true
+  }
 }

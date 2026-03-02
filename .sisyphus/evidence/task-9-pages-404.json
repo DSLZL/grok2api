@@ -1,6 +1,9 @@
 {
   "scenario": "public_disabled_returns_404",
   "base": "http://127.0.0.1:19000",
+  "command": "SERVER_PORT=19000 go run ./cmd/server --config .sisyphus/evidence/task-9-public-false.toml",
+  "exit_code": 0,
+  "status": "pass",
   "checks": {
     "imagine": {
       "status": 404
@@ -8,6 +11,5 @@
     "voice": {
       "status": 404
     }
-  },
-  "pass": true
+  }
 }
