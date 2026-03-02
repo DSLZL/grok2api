@@ -1,0 +1,13 @@
+{
+  "scenario": "public_disabled_returns_404",
+  "base": "http://127.0.0.1:19000",
+  "checks": {
+    "imagine": {
+      "status": 404
+    },
+    "voice": {
+      "status": 404
+    }
+  },
+  "pass": true
+}

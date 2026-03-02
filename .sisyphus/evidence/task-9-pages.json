@@ -1,0 +1,146 @@
+[
+  {
+    "route": "/",
+    "py": {
+      "status": 307,
+      "location": "/admin/login"
+    },
+    "go": {
+      "status": 307,
+      "location": "/admin/login"
+    },
+    "match": true
+  },
+  {
+    "route": "/login",
+    "py": {
+      "status": 404,
+      "location": ""
+    },
+    "go": {
+      "status": 404,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/imagine",
+    "py": {
+      "status": 404,
+      "location": ""
+    },
+    "go": {
+      "status": 404,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/voice",
+    "py": {
+      "status": 404,
+      "location": ""
+    },
+    "go": {
+      "status": 404,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/video",
+    "py": {
+      "status": 404,
+      "location": ""
+    },
+    "go": {
+      "status": 404,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/chat",
+    "py": {
+      "status": 404,
+      "location": ""
+    },
+    "go": {
+      "status": 404,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/admin",
+    "py": {
+      "status": 307,
+      "location": "/admin/login"
+    },
+    "go": {
+      "status": 307,
+      "location": "/admin/login"
+    },
+    "match": true
+  },
+  {
+    "route": "/admin/login",
+    "py": {
+      "status": 200,
+      "location": ""
+    },
+    "go": {
+      "status": 200,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/admin/config",
+    "py": {
+      "status": 200,
+      "location": ""
+    },
+    "go": {
+      "status": 200,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/admin/cache",
+    "py": {
+      "status": 200,
+      "location": ""
+    },
+    "go": {
+      "status": 200,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/admin/token",
+    "py": {
+      "status": 200,
+      "location": ""
+    },
+    "go": {
+      "status": 200,
+      "location": ""
+    },
+    "match": true
+  },
+  {
+    "route": "/static/public/pages/login.html",
+    "py": {
+      "status": 200,
+      "location": ""
+    },
+    "go": {
+      "status": 200,
+      "location": ""
+    },
+    "match": true
+  }
+]

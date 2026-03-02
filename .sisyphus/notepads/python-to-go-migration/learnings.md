@@ -42,3 +42,7 @@
 - 2026-03-02 Task8: 新增 `tools/parity/error_envelope_diff.py`，沿用 auth parity 脚本风格输出机读 JSON（`status/mismatch_count/cases/targets`），覆盖 HTTP 映射与 validation 特例基线语义。
 - 2026-03-02 Task8验收: `go test ./internal/errors ./internal/middleware -count=1` 通过，错误 envelope 四字段、401/403/404/429 映射、validation JSON 特例与 param 提取、响应日志 skip/trace/duration/error 路径覆盖均通过。
 - 2026-03-02 Task8验收: 产出 `.sisyphus/evidence/task-8-errors.json`、`.sisyphus/evidence/task-8-errors-ok.json`、`.sisyphus/evidence/task-8-log-compare.json`；其中 404 case 的 py/go `error.type` 均为 `not_found_error`，日志 QA 三项检查均为 pass。
+
+- 2026-03-02 Task9: 页面 404 根因确认是 internal/http/router.go 仅在 RouterOptions.Config 非空时注册 pages，修复点集中在 internal/app/app.go 为 NewRouter 注入 config manager。
+- 2026-03-02 Task9: 通过 --config 注入最小 [app].public_enabled 即可驱动页面语义：'/' 重定向目标、public 页面 404/200 分支与 /admin* 可达性均与 Python 对齐。
+- 2026-03-02 Task9: parity 静态资源探针改为 /static/public/pages/login.html（仓库存在文件），避免历史路径不存在导致误判 static mount 差异。

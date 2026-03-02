@@ -14,3 +14,6 @@
 - 2026-03-02 Task6-fix: 切换 TOML import 到 v2 时，LSP 在依赖同步前会短暂提示“no required module provides package”；执行 `go mod tidy` 后恢复正常。
 - 2026-03-02 Task8: 新增 parity 脚本时触发 comment/docstring hook（检测到行内注释），已立即删除该注释并保持代码语义不变，后续该类脚本需避免非必要注释。
 - 2026-03-02 Task8验收: parity 脚本当前为语义基线比对并附带 py/go 可达性探针；当 8000/19000 未启动时 `targets.*_reachable.reachable=false` 但仍可稳定输出语义对比结果，验收需结合 go test 与 QA 证据共同判定。
+
+- 2026-03-02 Task9: 首次 parity 失败是端口冲突（Go 默认 8000 与 Python 冲突）导致 go 端全量 connection refused；改为 SERVER_PORT=19000 启动后恢复可比对。
+- 2026-03-02 Task9: QA 404 场景需要切换 public_enabled，运行态缺省无 data/config.toml 时必须使用 --config 指向临时 TOML 文件保障场景可重复。

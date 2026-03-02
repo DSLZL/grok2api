@@ -1,0 +1,15 @@
+{
+  "scenario": "happy_path_pages_and_static",
+  "base": "http://127.0.0.1:19000",
+  "checks": {
+    "root": {
+      "status": 307,
+      "location": "/login"
+    },
+    "static_login": {
+      "status": 200,
+      "content_type": "text/html; charset=utf-8"
+    }
+  },
+  "pass": true
+}
