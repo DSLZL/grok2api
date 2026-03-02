@@ -55,3 +55,5 @@
 - 2026-03-02 Task11: 新增 `internal/token` 包并完成 `models/manager/scheduler/store_adapter` 闭环，保持 Python 语义关键点：`reload_if_stale`、401-only `record_fail`、`mark_rate_limited->cooling`、`refresh_cooling_tokens` 统计返回 `checked/refreshed/recovered/expired`。
 - 2026-03-02 Task11: manager 保存链路采用 dirty tracking（state/usage 区分）+ 延迟 `_schedule_save` + `save(force)`，usage-only 变更受 `UsageFlushInterval` 节流且落库走 `SaveTokensDelta`，避免退化为全量频繁写。
 - 2026-03-02 Task11: scheduler 通过 `AcquireLock("token_refresh")` 做并发互斥，`TestDistributedRefreshLockExclusion` 验证双实例同周期仅一方执行刷新；证据日志已落盘到 `.sisyphus/evidence/task-11-token-refresh.log` 与 `.sisyphus/evidence/task-11-token-lock.log`。
+- 2026-03-02 Task12: 新增 `internal/reverse` 并落地最小闭环：`app_chat` HTTP stream relay（逐行转发且保持 `[DONE]`）、`RetryOnError`（`max_retry/status_codes/retry_budget` + 429 `Retry-After` 优先）、`ws_imagine` close/error 映射与 blocked 判定。
+- 2026-03-02 Task12: 401/429/5xx 映射入口统一在 `MapHTTPError`，WS close code 映射统一在 `MapWSCloseCode`；关键专测 `TestWsCloseAndRetryMapping`、`TestAppChatStreamHappyPath`、`TestWsServerCloseCodeMapping` 与全量 `go test ./internal/reverse -count=1` 均通过。

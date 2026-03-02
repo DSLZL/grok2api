@@ -22,3 +22,5 @@
 - 2026-03-02 Task10: 仓库存在大量历史未跟踪与跨任务改动噪声，storage 提交需严格 path-limited stage（仅 `internal/storage/storage.go` + Task10 evidence + 指定 notepad 追加），否则极易误提交无关文件。
 - 2026-03-02 Task11: 初版 `TestDeltaSaveAndReloadStale` 把“usage flush 节流”与“首次延迟落盘”混在一个断言，触发误判；拆分为子测试后分别验证 save delay 与 usage flush interval，稳定通过。
 - 2026-03-02 Task11: `TickOnce` 在无 cooling token 时会返回 true（无刷新即成功），导致“missing refresher”测试初版假阴性；修正为预置 cooling token 触发真实 refresh 路径。
+- 2026-03-02 Task12: reverse 子包初始不存在导致 `go test ./internal/reverse -count=1` 直接 setup failed（directory not found）；按 TDD 先建测试再补实现后恢复。
+- 2026-03-02 Task12: 仓库包含大量历史噪声改动，提交阶段必须严格 path-limited（仅 `internal/reverse/*`、Task12 evidence、notepad append），否则极易误带无关文件。
