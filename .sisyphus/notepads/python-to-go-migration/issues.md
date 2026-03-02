@@ -19,3 +19,4 @@
 - 2026-03-02 Task9: QA 404 场景需要切换 public_enabled，运行态缺省无 data/config.toml 时必须使用 --config 指向临时 TOML 文件保障场景可重复。
 
 - 2026-03-02 Task9收尾: 生成 QA 证据时若 public_enabled=true 仍出现 '/admin/login'，通常是旧进程或配置未切换导致；需 kill 旧 go 进程后带 --config 重启再采样。
+- 2026-03-02 Task10: 仓库存在大量历史未跟踪与跨任务改动噪声，storage 提交需严格 path-limited stage（仅 `internal/storage/storage.go` + Task10 evidence + 指定 notepad 追加），否则极易误提交无关文件。

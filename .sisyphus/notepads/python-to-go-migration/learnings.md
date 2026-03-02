@@ -48,3 +48,7 @@
 - 2026-03-02 Task9: parity 静态资源探针改为 /static/public/pages/login.html（仓库存在文件），避免历史路径不存在导致误判 static mount 差异。
 
 - 2026-03-02 Task9收尾: QA evidence 文件统一补齐 command/exit_code/status 字段，证据格式改为可机读并可追溯执行命令。
+- 2026-03-02 Task10: 新增 `internal/storage/storage.go`，补齐 `Store` 抽象、`BackendStats`、`ErrLockTimeout`、四后端构造器（local/redis/mysql/pgsql）与 `GetStorage/ResetStorageFactoryForTest` 工厂选择语义。
+- 2026-03-02 Task10: `SaveTokensDelta` 采用 Python 语义等价增量合并（兼容 pool 内 mixed 结构：`map[string]any` + legacy `string`），并显式保证增量路径不调用全量 `SaveTokens`，满足 parity 测试对 `Stats().SaveTokensCalls` 的约束。
+- 2026-03-02 Task10: 锁实现采用命名锁 + 超时等待模型，争用超时时返回 `ErrLockTimeout` 且等待时长接近 timeout；`TestLockContentionTimeout` 在 redis 后端路径稳定通过。
+- 2026-03-02 Task10: local 后端 `LoadConfig/LoadTokens` 对损坏 TOML/JSON 不吞错，直接返回解析错误，保持 failure-path 契约（损坏文件必须报错）。
