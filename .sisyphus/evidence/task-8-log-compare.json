@@ -1,0 +1,41 @@
+{
+  "status": "pass",
+  "checks": [
+    {
+      "name": "skip_page_routes",
+      "path": "/login",
+      "expected": "skip path has no trace injection and no request/response logs",
+      "command": "go test ./internal/middleware -run TestResponseLoggerMiddlewareSkipsConfiguredPaths -count=1",
+      "exit_code": 0,
+      "passed": true,
+      "stdout": [
+        "ok  \tgrok2api/internal/middleware\t0.478s"
+      ],
+      "stderr": []
+    },
+    {
+      "name": "non_skip_trace_duration",
+      "path": "/v1/models",
+      "expected": "non-skip path injects trace_id and logs method/path/status/duration_ms",
+      "command": "go test ./internal/middleware -run TestResponseLoggerMiddlewareInjectsTraceAndLogsSuccess -count=1",
+      "exit_code": 0,
+      "passed": true,
+      "stdout": [
+        "ok  \tgrok2api/internal/middleware\t0.478s"
+      ],
+      "stderr": []
+    },
+    {
+      "name": "error_path_logging",
+      "path": "/v1/chat/completions",
+      "expected": "panic path writes error log with trace_id/path/duration_ms and rethrows",
+      "command": "go test ./internal/middleware -run TestResponseLoggerMiddlewareLogsErrorAndRethrows -count=1",
+      "exit_code": 0,
+      "passed": true,
+      "stdout": [
+        "ok  \tgrok2api/internal/middleware\t0.499s"
+      ],
+      "stderr": []
+    }
+  ]
+}

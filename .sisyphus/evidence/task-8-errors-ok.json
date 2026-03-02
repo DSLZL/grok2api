@@ -1,0 +1,12 @@
+{
+  "status": "pass",
+  "source": "task-8-errors.json",
+  "check": {
+    "name": "http_404_not_found",
+    "py_status": 404,
+    "go_status": 404,
+    "py_error_type": "not_found_error",
+    "go_error_type": "not_found_error",
+    "mismatch": false
+  }
+}
