@@ -20,3 +20,5 @@
 
 - 2026-03-02 Task9收尾: 生成 QA 证据时若 public_enabled=true 仍出现 '/admin/login'，通常是旧进程或配置未切换导致；需 kill 旧 go 进程后带 --config 重启再采样。
 - 2026-03-02 Task10: 仓库存在大量历史未跟踪与跨任务改动噪声，storage 提交需严格 path-limited stage（仅 `internal/storage/storage.go` + Task10 evidence + 指定 notepad 追加），否则极易误提交无关文件。
+- 2026-03-02 Task11: 初版 `TestDeltaSaveAndReloadStale` 把“usage flush 节流”与“首次延迟落盘”混在一个断言，触发误判；拆分为子测试后分别验证 save delay 与 usage flush interval，稳定通过。
+- 2026-03-02 Task11: `TickOnce` 在无 cooling token 时会返回 true（无刷新即成功），导致“missing refresher”测试初版假阴性；修正为预置 cooling token 触发真实 refresh 路径。

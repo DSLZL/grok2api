@@ -52,3 +52,6 @@
 - 2026-03-02 Task10: `SaveTokensDelta` 采用 Python 语义等价增量合并（兼容 pool 内 mixed 结构：`map[string]any` + legacy `string`），并显式保证增量路径不调用全量 `SaveTokens`，满足 parity 测试对 `Stats().SaveTokensCalls` 的约束。
 - 2026-03-02 Task10: 锁实现采用命名锁 + 超时等待模型，争用超时时返回 `ErrLockTimeout` 且等待时长接近 timeout；`TestLockContentionTimeout` 在 redis 后端路径稳定通过。
 - 2026-03-02 Task10: local 后端 `LoadConfig/LoadTokens` 对损坏 TOML/JSON 不吞错，直接返回解析错误，保持 failure-path 契约（损坏文件必须报错）。
+- 2026-03-02 Task11: 新增 `internal/token` 包并完成 `models/manager/scheduler/store_adapter` 闭环，保持 Python 语义关键点：`reload_if_stale`、401-only `record_fail`、`mark_rate_limited->cooling`、`refresh_cooling_tokens` 统计返回 `checked/refreshed/recovered/expired`。
+- 2026-03-02 Task11: manager 保存链路采用 dirty tracking（state/usage 区分）+ 延迟 `_schedule_save` + `save(force)`，usage-only 变更受 `UsageFlushInterval` 节流且落库走 `SaveTokensDelta`，避免退化为全量频繁写。
+- 2026-03-02 Task11: scheduler 通过 `AcquireLock("token_refresh")` 做并发互斥，`TestDistributedRefreshLockExclusion` 验证双实例同周期仅一方执行刷新；证据日志已落盘到 `.sisyphus/evidence/task-11-token-refresh.log` 与 `.sisyphus/evidence/task-11-token-lock.log`。
