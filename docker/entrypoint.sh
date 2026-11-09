@@ -13,5 +13,9 @@ cp "${GROK2API_CONFIG_SOURCE}" /app/config.yaml
 chown grok2api:grok2api /app/config.yaml
 chmod 0600 /app/config.yaml
 
+if [ "$#" -gt 0 ] && [ "$1" = "/app/grok2api" ] && [ "${2:-}" != "migrate" ]; then
+  su-exec grok2api:grok2api /app/grok2api migrate --config /app/config.yaml
+fi
+
 exec su-exec grok2api:grok2api "$@"
 

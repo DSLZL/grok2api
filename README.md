@@ -175,6 +175,8 @@ The admin console is available at `http://127.0.0.1:8000` by default.
 
 Compose mounts `config.yaml` read-only and stores the SQLite database and local media in the `grok2api-data` volume. The image already contains the frontend; no separate web deployment is required.
 
+The default container command runs `grok2api migrate --config /app/config.yaml` before starting the server. A bare PostgreSQL service process never changes schema; source and least-privilege deployments must run `cd backend && go run ./cmd/grok2api migrate --config ../config.yaml` (or an equivalent migration job) before serving traffic.
+
 Common maintenance commands:
 
 ```bash
@@ -346,6 +348,7 @@ The egress layer retries only connection errors that clearly occur before a requ
 - Keep `server.swaggerEnabled: false` in production
 - Never commit OAuth data, SSO tokens, cookies, account exports, or real databases
 - Use PostgreSQL and Redis for multi-instance deployments, plus shared media storage or instance affinity
+- Run PostgreSQL migrations with a DDL-capable deployment identity, then use a DML-only identity for the service where the platform supports separate credentials
 - Back up `config.yaml`, the relational database, and the media directory
 - Place a reverse proxy, access controls, and basic network protections in front of public deployments
 

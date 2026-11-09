@@ -1,0 +1,1 @@
+backend/internal/infra/persistence/relational/migrations/*.sql text eol=lf

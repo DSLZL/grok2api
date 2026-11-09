@@ -27,10 +27,23 @@ func TestParseOptionsSupportsContainerListenOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.configPath != "/app/config.yaml" || options.listen != "0.0.0.0:8000" {
+	if options.configPath != "/app/config.yaml" || options.listen != "0.0.0.0:8000" || options.command != commandServe {
 		t.Fatalf("options = %#v", options)
 	}
 	if _, err := parseOptions([]string{"--listen"}); err == nil {
 		t.Fatal("missing --listen value was accepted")
+	}
+}
+
+func TestParseOptionsSupportsMigrate(t *testing.T) {
+	options, err := parseOptions([]string{"migrate", "--config", "/app/config.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.command != commandMigrate || options.configPath != "/app/config.yaml" || options.listen != "" {
+		t.Fatalf("options = %#v", options)
+	}
+	if _, err := parseOptions([]string{"migrate", "--listen", "127.0.0.1:8000"}); err == nil {
+		t.Fatal("migrate accepted --listen")
 	}
 }

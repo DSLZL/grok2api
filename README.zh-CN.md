@@ -176,6 +176,8 @@ docker compose logs -f grok2api
 
 Compose 会将 `config.yaml` 只读挂载到容器，并使用 `grok2api-data` 保存 SQLite 数据库和本地媒体。镜像已经包含前端，无需单独部署 Web 服务。
 
+默认容器命令会先执行 `grok2api migrate --config /app/config.yaml`，再启动服务。直接运行的 PostgreSQL 服务进程不会修改 Schema；源码部署或最小权限部署必须先运行 `cd backend && go run ./cmd/grok2api migrate --config ../config.yaml`（或等价 migration job），再接入流量。
+
 常用维护命令：
 
 ```bash
@@ -347,6 +349,7 @@ socks5h://Default.{account}:RESIN_PROXY_TOKEN@resin:2260
 - 生产环境保持 `server.swaggerEnabled: false`
 - 不要将 OAuth、SSO、Cookie、账号导出或真实数据库提交到 Git
 - 多实例使用 PostgreSQL 与 Redis，并为媒体配置共享卷或实例亲和
+- 平台支持凭据分离时，使用可执行 DDL 的发布身份运行 PostgreSQL 迁移，服务进程使用仅 DML 身份
 - 备份 `config.yaml`、关系型数据库和媒体目录
 - 公网部署建议使用反向代理、访问控制和基础网络防护
 

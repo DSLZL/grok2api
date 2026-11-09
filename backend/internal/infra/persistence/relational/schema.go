@@ -81,6 +81,9 @@ var schemaIndexes = []string{
 
 // InitializeSchema 以当前持久化模型作为首版数据库结构基线。
 func (d *Database) InitializeSchema(ctx context.Context) error {
+	if d == nil || d.dialect != "sqlite" {
+		return fmt.Errorf("InitializeSchema 仅支持 SQLite；PostgreSQL 请运行显式迁移")
+	}
 	db := d.db.WithContext(ctx)
 	// all 作用域会让 Build 与 Web 共用 UA、健康度和冷却状态，升级时直接移除旧节点。
 	if db.Migrator().HasTable(&egressNodeModel{}) {
@@ -91,14 +94,9 @@ func (d *Database) InitializeSchema(ctx context.Context) error {
 	autoMigrate := func() error {
 		return d.db.WithContext(ctx).AutoMigrate(schemaModels...)
 	}
-	var migrateErr error
-	if d.dialect == "sqlite" {
-		// SQLite 修改 CHECK 等表级约束时会重建表。provider_accounts 等父表已被多个
-		// 子表引用，必须在固定连接上暂停外键，否则 DROP 旧父表会直接失败。
-		migrateErr = d.withSQLiteForeignKeysDisabled(ctx, autoMigrate)
-	} else {
-		migrateErr = autoMigrate()
-	}
+	// SQLite 修改 CHECK 等表级约束时会重建表。provider_accounts 等父表已被多个
+	// 子表引用，必须在固定连接上暂停外键，否则 DROP 旧父表会直接失败。
+	migrateErr := d.withSQLiteForeignKeysDisabled(ctx, autoMigrate)
 	if migrateErr != nil {
 		return fmt.Errorf("初始化数据库表: %w", migrateErr)
 	}
@@ -152,8 +150,7 @@ func (d *Database) ensureAuditOperationConstraints(ctx context.Context) error {
 	}, "compaction")
 }
 
-// ensureMediaJobConstraints 将历史仅允许 grok_web 的 media job CHECK 升级到支持 Build 视频。
-// AutoMigrate 不会可靠替换已有 PostgreSQL CHECK，因此启动时幂等检测并重建。
+// ensureMediaJobConstraints 将 SQLite 历史库中仅允许 grok_web 的 media job CHECK 升级到支持 Build 视频。
 func (d *Database) ensureMediaJobConstraints(ctx context.Context) error {
 	return d.ensureNamedConstraints(ctx, []consoleConstraint{
 		{model: &mediaJobModel{}, table: "media_jobs", name: "chk_media_jobs_provider"},

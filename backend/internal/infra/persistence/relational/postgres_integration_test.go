@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
 	"testing"
 	"time"
 
@@ -12,17 +11,14 @@ import (
 )
 
 func TestPostgresRepositoriesIntegration(t *testing.T) {
-	dsn := os.Getenv("TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("TEST_POSTGRES_DSN is not configured")
-	}
+	dsn := isolatedPostgresDSN(t)
 	ctx := context.Background()
-	database, err := OpenPostgres(ctx, dsn, 10, 2)
+	database, err := OpenPostgres(ctx, dsn, 10, 2, 5*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	if err := database.InitializeSchema(ctx); err != nil {
+	if err := database.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
 	repository := NewAccountRepository(database)

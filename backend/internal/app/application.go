@@ -69,22 +69,19 @@ type Application struct {
 
 // New 完成数据库、Provider、应用服务和 HTTP 路由装配。
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Application, error) {
-	var database *relational.Database
-	var err error
-	switch cfg.Database.Driver {
-	case "sqlite":
-		database, err = relational.OpenSQLite(ctx, cfg.Database.SQLite.Path)
-	case "postgres":
-		database, err = relational.OpenPostgres(ctx, cfg.Database.Postgres.DSN, cfg.Database.Postgres.MaxOpenConns, cfg.Database.Postgres.MaxIdleConns)
-	default:
-		return nil, fmt.Errorf("不支持的数据库驱动: %s", cfg.Database.Driver)
-	}
+	database, err := openDatabase(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	if err := database.InitializeSchema(ctx); err != nil {
+	var schemaErr error
+	if cfg.Database.Driver == "sqlite" {
+		schemaErr = database.InitializeSchema(ctx)
+	} else {
+		schemaErr = database.CheckSchema(ctx)
+	}
+	if schemaErr != nil {
 		database.Close()
-		return nil, err
+		return nil, schemaErr
 	}
 	cipher, err := security.NewCipher(cfg.Secrets.CredentialEncryptionKey)
 	if err != nil {
@@ -311,6 +308,31 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService,
 		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, startup: startup,
 	}, nil
+}
+
+// Migrate applies the configured database schema without constructing runtime services.
+func Migrate(ctx context.Context, cfg config.Config) error {
+	database, err := openDatabase(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	if cfg.Database.Driver == "sqlite" {
+		err = database.InitializeSchema(ctx)
+	} else {
+		err = database.Migrate(ctx)
+	}
+	return errors.Join(err, database.Close())
+}
+
+func openDatabase(ctx context.Context, cfg config.Config) (*relational.Database, error) {
+	switch cfg.Database.Driver {
+	case "sqlite":
+		return relational.OpenSQLite(ctx, cfg.Database.SQLite.Path)
+	case "postgres":
+		return relational.OpenPostgres(ctx, cfg.Database.Postgres.DSN, cfg.Database.Postgres.MaxOpenConns, cfg.Database.Postgres.MaxIdleConns, cfg.Database.Postgres.ConnMaxIdleTime.Value())
+	default:
+		return nil, fmt.Errorf("不支持的数据库驱动: %s", cfg.Database.Driver)
+	}
 }
 
 func maxBatchConcurrency(value config.BatchConfig) int {

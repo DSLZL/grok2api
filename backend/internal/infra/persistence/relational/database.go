@@ -2,6 +2,8 @@ package relational
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,16 +32,20 @@ func OpenSQLite(ctx context.Context, path string) (*Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开 SQLite: %w", err)
 	}
-	return configureDatabase(ctx, db, "sqlite", 16, 16)
+	return configureDatabase(ctx, db, "sqlite", 16, 16, 0)
 }
 
 // OpenPostgres 打开 PostgreSQL 数据库并配置连接池。
-func OpenPostgres(ctx context.Context, dsn string, maxOpenConns, maxIdleConns int) (*Database, error) {
+func OpenPostgres(ctx context.Context, dsn string, maxOpenConns, maxIdleConns int, connMaxIdleTime ...time.Duration) (*Database, error) {
 	db, err := gorm.Open(postgres.Open(dsn), gormConfig())
 	if err != nil {
 		return nil, fmt.Errorf("打开 PostgreSQL: %w", err)
 	}
-	return configureDatabase(ctx, db, "postgres", maxOpenConns, maxIdleConns)
+	idleTime := 5 * time.Minute
+	if len(connMaxIdleTime) > 0 && connMaxIdleTime[0] > 0 {
+		idleTime = connMaxIdleTime[0]
+	}
+	return configureDatabase(ctx, db, "postgres", maxOpenConns, maxIdleConns, idleTime)
 }
 
 func gormConfig() *gorm.Config {
@@ -50,7 +56,7 @@ func gormConfig() *gorm.Config {
 	}
 }
 
-func configureDatabase(ctx context.Context, db *gorm.DB, dialect string, maxOpenConns, maxIdleConns int) (*Database, error) {
+func configureDatabase(ctx context.Context, db *gorm.DB, dialect string, maxOpenConns, maxIdleConns int, connMaxIdleTime time.Duration) (*Database, error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
@@ -58,6 +64,7 @@ func configureDatabase(ctx context.Context, db *gorm.DB, dialect string, maxOpen
 	sqlDB.SetMaxOpenConns(maxOpenConns)
 	sqlDB.SetMaxIdleConns(maxIdleConns)
 	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
 	if err := sqlDB.PingContext(ctx); err != nil {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("连接 %s: %w", dialect, err)
@@ -65,9 +72,16 @@ func configureDatabase(ctx context.Context, db *gorm.DB, dialect string, maxOpen
 	return &Database{db: db, dialect: dialect}, nil
 }
 
+func (d *Database) sqlDB() (*sql.DB, error) {
+	if d == nil || d.db == nil {
+		return nil, errors.New("数据库未初始化")
+	}
+	return d.db.DB()
+}
+
 // Close 关闭底层数据库连接。
 func (d *Database) Close() error {
-	sqlDB, err := d.db.DB()
+	sqlDB, err := d.sqlDB()
 	if err != nil {
 		return err
 	}

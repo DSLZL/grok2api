@@ -15,7 +15,7 @@ import (
 )
 
 // Run 解析启动参数并运行后端服务。
-func Run(args []string) error {
+func Run(args []string) (resultErr error) {
 	options, err := parseOptions(args)
 	if err != nil {
 		return err
@@ -30,24 +30,39 @@ func Run(args []string) error {
 			return err
 		}
 	}
-	logger := observability.NewLogger()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if options.command == commandMigrate {
+		return app.Migrate(ctx, cfg)
+	}
+	logger := observability.NewLogger()
 	application, err := app.New(ctx, cfg, logger)
 	if err != nil {
 		return err
 	}
-	defer application.Close()
+	defer func() { resultErr = errors.Join(resultErr, application.Close()) }()
 	return application.Run(ctx)
 }
 
 type runOptions struct {
 	configPath string
 	listen     string
+	command    command
 }
 
+type command string
+
+const (
+	commandServe   command = "serve"
+	commandMigrate command = "migrate"
+)
+
 func parseOptions(args []string) (runOptions, error) {
-	options := runOptions{configPath: defaultConfigPath()}
+	options := runOptions{configPath: defaultConfigPath(), command: commandServe}
+	if len(args) > 0 && args[0] == string(commandMigrate) {
+		options.command = commandMigrate
+		args = args[1:]
+	}
 	for index := 0; index < len(args); index++ {
 		switch args[index] {
 		case "--config":
@@ -65,6 +80,9 @@ func parseOptions(args []string) (runOptions, error) {
 		default:
 			return runOptions{}, fmt.Errorf("不支持的启动参数: %s", args[index])
 		}
+	}
+	if options.command == commandMigrate && options.listen != "" {
+		return runOptions{}, errors.New("migrate 子命令不支持 --listen")
 	}
 	return options, nil
 }

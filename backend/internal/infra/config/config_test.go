@@ -54,6 +54,9 @@ bootstrapAdmin:
 	if !cfg.Routing.ReasoningReplayEnabled || cfg.Routing.ReasoningReplayTTL.Value() != time.Hour || cfg.Routing.ReasoningReplayMaxEntries != 10240 {
 		t.Fatalf("reasoning replay defaults = %#v", cfg.Routing)
 	}
+	if cfg.Database.Postgres.MaxOpenConns != 6 || cfg.Database.Postgres.MaxIdleConns != 2 || cfg.Database.Postgres.ConnMaxIdleTime.Value() != 5*time.Minute {
+		t.Fatalf("postgres pool defaults = %#v", cfg.Database.Postgres)
+	}
 	expectedDatabasePath := filepath.Join(dir, "data", "backend.db")
 	if cfg.Database.SQLite.Path != expectedDatabasePath {
 		t.Fatalf("database path = %q, want %q", cfg.Database.SQLite.Path, expectedDatabasePath)
@@ -270,6 +273,29 @@ func TestValidateInfrastructureDrivers(t *testing.T) {
 	invalidRuntime.RuntimeStore.Driver = "fallback"
 	if err := invalidRuntime.Validate(); err == nil {
 		t.Fatal("unsupported runtime store driver was accepted")
+	}
+}
+
+func TestValidatePostgresPoolLimits(t *testing.T) {
+	base := defaultConfig()
+	base.Secrets.JWTSecret = "12345678901234567890123456789012"
+	base.Secrets.CredentialEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	base.Database.Driver = "postgres"
+	base.Database.Postgres.DSN = "postgres://user:password@127.0.0.1:5432/grok2api"
+
+	for name, mutate := range map[string]func(*Config){
+		"open zero":      func(cfg *Config) { cfg.Database.Postgres.MaxOpenConns = 0 },
+		"idle over open": func(cfg *Config) { cfg.Database.Postgres.MaxIdleConns = cfg.Database.Postgres.MaxOpenConns + 1 },
+		"idle time low":  func(cfg *Config) { cfg.Database.Postgres.ConnMaxIdleTime = Duration(time.Second) },
+		"idle time high": func(cfg *Config) { cfg.Database.Postgres.ConnMaxIdleTime = Duration(2 * time.Hour) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := base
+			mutate(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("invalid postgres pool was accepted")
+			}
+		})
 	}
 }
 
